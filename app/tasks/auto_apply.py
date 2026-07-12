@@ -3,6 +3,7 @@ Celery tasks for autonomous job application.
 """
 import asyncio
 from datetime import datetime, date, timezone
+from app.services import notification_service
 
 import structlog
 from sqlalchemy import select, func
@@ -154,6 +155,15 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                                 company=job.company,
                                 tenant_db=tenant_db,
                             )
+                            await notification_service.notify(
+                                user_id=user_id,
+                                event_type="hitl_review_needed",
+                                subject=f"Review needed: {job.title} at {job.company}",
+                                body=f"A job matching {job.match_score:.0%} of your skills is waiting for your review.",
+                                tenant_db=tenant_db,
+                                shared_db=shared_db,
+                                deep_link="/dashboard/applications?filter=pending_hitl",
+                            )
                             continue
 
                         if master_resume is None:
@@ -226,6 +236,18 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                             resume_path=minio_key,
                             cover_letter=cover_letter,
                             job_record=job,
+                        )
+
+                        await notification_service.notify(
+                            user_id=user_id,
+                            event_type="job_applied",
+                            subject=f"Applied to {job.title} at {job.company}",
+                            body=(
+                                f"jH_ANS applied to {job.title} at {job.company} on {job.portal}. "
+                                f"Match score: {job.match_score:.0%}"
+                            ),
+                            tenant_db=tenant_db,
+                            shared_db=shared_db,
                         )
 
                     except Exception as exc:
