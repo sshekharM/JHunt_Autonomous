@@ -1,5 +1,14 @@
+import sys
+import asyncio
+
 import structlog
 from fastapi import FastAPI, Request
+
+# Python 3.8+ on Windows defaults to ProactorEventLoop which is incompatible
+# with some libraries (httpx, uvicorn internals). Force SelectorEventLoop on
+# Windows to ensure cross-platform compatibility.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler

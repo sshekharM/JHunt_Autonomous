@@ -1,3 +1,6 @@
+# Linux-only image — runs correctly inside Docker on Windows Server (Linux containers).
+# On Windows, start the worker with --pool=solo or set CELERY_WORKER_POOL=solo
+# (handled automatically in app/tasks/celery_app.py when sys.platform == "win32").
 FROM python:3.12-slim
 
 WORKDIR /app
