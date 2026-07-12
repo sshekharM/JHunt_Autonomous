@@ -1,6 +1,6 @@
 """
 Unit tests for resume_service.
-All external I/O (MinIO, LLM, WeasyPrint) is mocked.
+All external I/O (MinIO, LLM, Playwright) is mocked.
 """
 import io
 import json
@@ -127,12 +127,25 @@ async def test_generate_tailored_resume_strips_markdown_fences():
 
 @pytest.mark.asyncio
 async def test_render_tailored_pdf_returns_minio_key():
-    """render_tailored_pdf should call WeasyPrint and upload to MinIO."""
+    """render_tailored_pdf should render via Playwright and upload to MinIO."""
     fake_pdf_bytes = b"%PDF-1.4 fake content"
 
-    mock_html_instance = MagicMock()
-    mock_html_instance.write_pdf.return_value = fake_pdf_bytes
-    mock_html_cls = MagicMock(return_value=mock_html_instance)
+    # Mock the Playwright async context manager chain
+    mock_page = AsyncMock()
+    mock_page.pdf = AsyncMock(return_value=fake_pdf_bytes)
+    mock_page.set_content = AsyncMock()
+
+    mock_browser = AsyncMock()
+    mock_browser.new_page = AsyncMock(return_value=mock_page)
+    mock_browser.close = AsyncMock()
+
+    mock_chromium = AsyncMock()
+    mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium = mock_chromium
+    mock_pw.__aenter__ = AsyncMock(return_value=mock_pw)
+    mock_pw.__aexit__ = AsyncMock(return_value=False)
 
     captured_upload = {}
 
@@ -142,7 +155,7 @@ async def test_render_tailored_pdf_returns_minio_key():
         return f"{schema_name}/tailored_{filename}"
 
     with (
-        patch("app.services.resume_service.HTML", mock_html_cls),
+        patch("app.services.resume_service.async_playwright", return_value=mock_pw),
         patch("app.services.resume_service.upload_resume", new=fake_upload),
     ):
         from app.services.resume_service import render_tailored_pdf
@@ -154,4 +167,4 @@ async def test_render_tailored_pdf_returns_minio_key():
 
     assert key.startswith("user_schema_1/")
     assert captured_upload["content"] == fake_pdf_bytes
-    mock_html_instance.write_pdf.assert_called_once()
+    mock_page.pdf.assert_called_once()

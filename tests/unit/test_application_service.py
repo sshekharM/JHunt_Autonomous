@@ -176,10 +176,6 @@ async def test_queue_for_hitl_creates_pending_record():
     added_objects = []
     tenant_db.add.side_effect = lambda obj: added_objects.append(obj)
 
-    with patch("app.services.application_service.dispatch_activity_digest") as mock_notify:
-        # dispatch_activity_digest is inside a try/except so import errors won't fail test
-        pass
-
     from app.services.application_service import queue_for_hitl
 
     with patch("app.tasks.notify.dispatch_activity_digest") as _:

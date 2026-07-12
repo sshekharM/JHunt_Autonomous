@@ -8,11 +8,8 @@ from datetime import datetime, timezone
 
 import pdfplumber
 import structlog
+from playwright.async_api import async_playwright
 from sqlalchemy.ext.asyncio import AsyncSession
-# WeasyPrint requires GTK libraries. On Linux (including Docker Linux containers
-# running on Windows Server) the required libraries are installed via apt in
-# Dockerfile. Do NOT run WeasyPrint on a bare Windows host — use Docker.
-from weasyprint import HTML
 
 from app.config import settings
 from app.llm import router as llm_router
@@ -167,9 +164,22 @@ async def render_tailored_pdf(
     schema_name: str,
     job_id: str,
 ) -> str:
-    """Render resume_data to PDF via WeasyPrint, upload to MinIO, return MinIO key."""
+    """
+    Render resume_data to PDF via Playwright (Chromium headless print-to-PDF).
+    Cross-platform: works on Linux, macOS, and bare Windows without GTK.
+    """
     html_str = _render_html(resume_data)
-    pdf_bytes = HTML(string=html_str).write_pdf()
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.set_content(html_str, wait_until="networkidle")
+        pdf_bytes = await page.pdf(
+            format="A4",
+            margin={"top": "20mm", "bottom": "20mm", "left": "18mm", "right": "18mm"},
+            print_background=True,
+        )
+        await browser.close()
 
     filename = f"tailored_{job_id}_{uuid.uuid4().hex[:8]}.pdf"
     key = await upload_resume(schema_name, pdf_bytes, filename)
