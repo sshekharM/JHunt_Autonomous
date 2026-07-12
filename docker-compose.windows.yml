@@ -1,0 +1,31 @@
+# Windows Server override for docker-compose.yml
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.windows.yml up
+#
+# This file adds environment variables required for correct Python behaviour on
+# Windows hosts and sets the Celery worker pool to solo (no os.fork required).
+# All containers are Linux-based; Docker Desktop / Docker Engine for Windows
+# must be configured to run Linux containers (the default).
+
+version: "3.9"
+
+services:
+  app:
+    environment:
+      - PYTHONIOENCODING=utf-8
+      - PYTHONUTF8=1
+
+  worker:
+    environment:
+      - PYTHONIOENCODING=utf-8
+      - PYTHONUTF8=1
+      # solo pool avoids the prefork pool's os.fork() dependency on Windows.
+      - CELERY_WORKER_POOL=solo
+    # Override the command to force solo pool explicitly at the CLI level as well.
+    command: celery -A app.tasks.celery_app worker --loglevel=info --pool=solo --concurrency=1
+
+  beat:
+    environment:
+      - PYTHONIOENCODING=utf-8
+      - PYTHONUTF8=1

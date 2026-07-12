@@ -1,3 +1,5 @@
+import sys
+
 from celery import Celery
 from celery.schedules import crontab
 from app.config import settings
@@ -25,6 +27,13 @@ celery_app.conf.update(
     task_track_started=True,
     worker_max_tasks_per_child=50,
 )
+
+# Windows: prefork pool requires os.fork() which is unavailable on Windows.
+# Use the solo pool (single-threaded, in-process) when running on Windows.
+# On Linux/Docker this block is a no-op.
+if sys.platform == "win32":
+    celery_app.conf.worker_pool = "solo"
+    celery_app.conf.worker_concurrency = 1
 
 celery_app.conf.beat_schedule = {
     "crawl-naukri": {

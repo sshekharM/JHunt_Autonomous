@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 import pdfplumber
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
+# WeasyPrint requires GTK libraries. On Linux (including Docker Linux containers
+# running on Windows Server) the required libraries are installed via apt in
+# Dockerfile. Do NOT run WeasyPrint on a bare Windows host — use Docker.
 from weasyprint import HTML
 
 from app.config import settings
