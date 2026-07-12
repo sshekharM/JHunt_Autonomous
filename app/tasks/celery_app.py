@@ -47,6 +47,16 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=45, hour="*/4"),
         "args": ("indeed",),
     },
+    "crawl-monster": {
+        "task": "app.tasks.crawl_jobs.crawl_portal",
+        "schedule": crontab(minute=10, hour="*/6"),
+        "args": ("monster",),
+    },
+    "crawl-shine": {
+        "task": "app.tasks.crawl_jobs.crawl_portal",
+        "schedule": crontab(minute=25, hour="*/6"),
+        "args": ("shine",),
+    },
     "match-jobs-hourly": {
         "task": "app.tasks.match_jobs.match_all_users",
         "schedule": crontab(minute=0, hour="*"),
@@ -62,5 +72,9 @@ celery_app.conf.beat_schedule = {
     "ml-retrain-nightly": {
         "task": "app.tasks.ml_retrain.retrain_all_user_models",
         "schedule": crontab(minute=0, hour=2),
+    },
+    "purge-stale-tailored-resumes": {
+        "task": "app.tasks.ml_retrain.purge_stale_resumes",
+        "schedule": crontab(hour=3, minute=0),
     },
 }

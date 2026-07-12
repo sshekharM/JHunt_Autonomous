@@ -95,24 +95,43 @@ def _tfidf_match(user_skills: list[str], job_skills: list[str]) -> dict:
 
 def _semantic_match(user_skills: list[str], job_skills: list[str]) -> dict:
     """
-    Sentence-transformers semantic similarity — Phase 5 upgrade.
+    Sentence-transformers semantic similarity — Phase 5.
+    Encodes each skill individually and computes pairwise cosine similarities.
+    A job skill is matched if any user skill embedding is >= 0.75 cosine similar.
     Falls back to TF-IDF if model unavailable.
     """
     model = _get_st_model()
     if not model:
         return _tfidf_match(user_skills, job_skills)
 
+    SEMANTIC_THRESHOLD = 0.75
+
     try:
-        user_emb = model.encode(" ".join(user_skills), convert_to_numpy=True)
-        job_emb = model.encode(" ".join(job_skills), convert_to_numpy=True)
-        score = float(
-            np.dot(user_emb, job_emb) / (np.linalg.norm(user_emb) * np.linalg.norm(job_emb) + 1e-8)
-        )
-        user_lower = {s.lower() for s in user_skills}
-        matched = [s for s in job_skills if s.lower() in user_lower]
-        missing = [s for s in job_skills if s.lower() not in user_lower]
+        user_embs = model.encode(user_skills, convert_to_numpy=True)
+        job_embs = model.encode(job_skills, convert_to_numpy=True)
+
+        # Normalise for cosine similarity via dot product
+        user_norms = np.linalg.norm(user_embs, axis=1, keepdims=True) + 1e-8
+        job_norms = np.linalg.norm(job_embs, axis=1, keepdims=True) + 1e-8
+        user_embs_n = user_embs / user_norms
+        job_embs_n = job_embs / job_norms
+
+        # similarity matrix: shape (num_job_skills, num_user_skills)
+        sim_matrix = job_embs_n @ user_embs_n.T
+
+        matched = []
+        missing = []
+        for idx, job_skill in enumerate(job_skills):
+            max_sim = float(sim_matrix[idx].max())
+            if max_sim >= SEMANTIC_THRESHOLD:
+                matched.append(job_skill)
+            else:
+                missing.append(job_skill)
+
+        score = round(len(matched) / len(job_skills), 4) if job_skills else 0.0
         coverage_pct = round(len(matched) / len(job_skills) * 100, 1) if job_skills else 0.0
-        return {"score": round(score, 4), "matched": matched, "missing": missing, "coverage_pct": coverage_pct}
+        return {"score": score, "matched": matched, "missing": missing, "coverage_pct": coverage_pct}
+
     except Exception as exc:
         logger.error("matcher.semantic_error", error=str(exc))
         return _tfidf_match(user_skills, job_skills)

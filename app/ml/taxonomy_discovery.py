@@ -89,8 +89,8 @@ async def queue_discovered_skills(
 
 class SoftSignals:
     """
-    SCAFFOLDED — inactive until Phase 5.
-    Will factor company size, funding, brand reputation into match scoring.
+    Factors company size, remote preference into match scoring.
+    Inactive until activate_soft_signals() is called.
     """
     enabled = False
 
@@ -98,5 +98,18 @@ class SoftSignals:
     def score(job_extra: dict, user_preferences: dict) -> float:
         if not SoftSignals.enabled:
             return 0.0
-        # Phase 5 implementation: analyse company_size, funding_stage, etc.
-        raise NotImplementedError("Soft signals not yet activated.")
+        score = 0.0
+        company_size = job_extra.get("company_size", "")
+        preferred_size = user_preferences.get("preferred_company_size", "")
+        if preferred_size and company_size == preferred_size:
+            score += 0.02
+        is_remote = job_extra.get("is_remote", False)
+        wants_remote = user_preferences.get("wfh_preference", "hybrid") in ("remote", "full_remote")
+        if is_remote and wants_remote:
+            score += 0.03
+        return round(min(score, 0.05), 4)
+
+
+def activate_soft_signals():
+    """Called by admin or feature flag to enable soft signal scoring."""
+    SoftSignals.enabled = True
