@@ -119,6 +119,35 @@ async def clear_session(portal: str) -> None:
     audit("crawler.session_cleared", details={"portal": portal})
 
 
+async def handle_session_expiry(
+    portal: str,
+    user_id: str,
+    schema_name: str,
+) -> None:
+    """Clear an expired session and notify the user to reconnect."""
+    from app.database import AsyncSessionLocal, get_tenant_db
+    from app.services import notification_service
+
+    await clear_session(portal)
+    try:
+        async with AsyncSessionLocal() as shared_db:
+            async for tenant_db in get_tenant_db(schema_name):
+                await notification_service.notify(
+                    user_id=user_id,
+                    event_type="session_expired",
+                    subject=f"Your {portal} session has expired",
+                    body=(
+                        f"Your {portal} session expired. "
+                        f"Click the link to reconnect and resume where you left off."
+                    ),
+                    tenant_db=tenant_db,
+                    shared_db=shared_db,
+                    deep_link=f"/portals/reconnect/{portal}",
+                )
+    except Exception as exc:
+        logger.error("session_manager.expiry_notify_failed", portal=portal, error=str(exc))
+
+
 async def save_crawl_state(portal: str, state: dict) -> None:
     """Save crawler progress state for resumption after session drop."""
     redis = await _get_redis()

@@ -67,6 +67,7 @@ class Settings(BaseSettings):
 
     # Notifications
     telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
     discord_bot_token: str = ""
     discord_guild_id: str = ""
 

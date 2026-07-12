@@ -2,6 +2,7 @@
 Celery tasks for polling application statuses across portals.
 """
 import asyncio
+from app.services import notification_service
 
 import structlog
 from sqlalchemy import select
@@ -156,6 +157,16 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
                             old=app.status.value,
                             new=new_status_str,
                         )
+
+                        async with AsyncSessionLocal() as shared_db:
+                            await notification_service.notify(
+                                user_id=user_id,
+                                event_type="status_changed",
+                                subject=f"Application update: {app.job_title} at {app.company}",
+                                body=f"Your application status changed to {new_status_str}.",
+                                tenant_db=tenant_db,
+                                shared_db=shared_db,
+                            )
 
                     except Exception as exc:
                         logger.warning(

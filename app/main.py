@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.security.rate_limiter import limiter
 from app.routers import auth, onboarding, dashboard, notifications
+from app.routers.applications import router as applications_router
 from app.routers.admin import users as admin_users
 from app.routers.admin import portals as admin_portals
 from app.routers.admin import crawls as admin_crawls
@@ -56,6 +57,7 @@ app.include_router(auth.router)
 app.include_router(onboarding.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
+app.include_router(applications_router)
 
 # Admin routers
 app.include_router(admin_users.router)

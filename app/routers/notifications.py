@@ -70,3 +70,28 @@ async def mark_read(
         )
         await tenant_db.commit()
     return {"ok": True}
+
+
+@router.get("/count")
+async def unread_count(
+    user: User = Depends(get_current_user),
+):
+    count = 0
+    async for tenant_db in get_tenant_db(user.schema_name):
+        result = await tenant_db.execute(
+            text("SELECT COUNT(*) FROM notification_log WHERE read=false")
+        )
+        count = result.scalar_one()
+    return {"unread": count}
+
+
+@router.post("/read-all")
+async def mark_all_read(
+    user: User = Depends(get_current_user),
+):
+    async for tenant_db in get_tenant_db(user.schema_name):
+        await tenant_db.execute(
+            text("UPDATE notification_log SET read=true WHERE read=false")
+        )
+        await tenant_db.commit()
+    return {"ok": True}
