@@ -26,3 +26,14 @@ def can_use_llm_api(user: User) -> bool:
     if not plan.enabled:
         return True
     return plan.llm_api_access
+
+
+def activate_plan(tier: str) -> None:
+    """
+    Called by Super Admin to enable a billing tier.
+    Once activated, feature gates start enforcing limits.
+    """
+    from app.billing.plans import PLANS
+    if tier not in PLANS:
+        raise ValueError(f"Unknown tier: {tier}")
+    PLANS[tier].enabled = True

@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     def allowed_ip_list(self) -> List[str]:
         return [ip.strip() for ip in self.allowed_ips.split(",")]
 
+    # Retention
+    resume_retention_days: int = 0  # 0 = disabled
+
     # Crawling
     crawl_max_concurrency: int = 5
     crawl_interval_hours: int = 4
@@ -103,6 +106,10 @@ class Settings(BaseSettings):
     glassdoor_system_password: str = ""
     indeed_system_email: str = ""
     indeed_system_password: str = ""
+    monster_system_email: str = ""
+    monster_system_password: str = ""
+    shine_system_email: str = ""
+    shine_system_password: str = ""
 
     @property
     def is_production(self) -> bool:

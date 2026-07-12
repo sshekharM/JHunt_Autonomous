@@ -15,6 +15,8 @@ _CRAWLER_MAP = {
     "linkedin": ("app.crawlers.linkedin", "LinkedInCrawler"),
     "glassdoor": ("app.crawlers.glassdoor", "GlassdoorCrawler"),
     "indeed": ("app.crawlers.indeed", "IndeedCrawler"),
+    "monster": ("app.crawlers.monster", "MonsterCrawler"),
+    "shine": ("app.crawlers.shine", "ShineCrawler"),
 }
 
 # Keyword sets that drive each crawl run; taxonomy_service provides the full list

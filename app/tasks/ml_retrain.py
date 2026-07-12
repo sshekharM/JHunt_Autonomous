@@ -156,6 +156,71 @@ def retrain_all_user_models():
 
 
 @celery_app.task
+def purge_stale_resumes():
+    """
+    Purge tailored resumes older than resume_retention_days from MinIO and the DB.
+    Controlled by settings.resume_retention_days (default 0 = disabled).
+    """
+    logger.info("purge_stale_resumes.started")
+    try:
+        asyncio.run(_purge_stale_resumes_async())
+    except Exception as exc:
+        logger.error("purge_stale_resumes.failed", error=str(exc))
+        raise
+
+
+async def _purge_stale_resumes_async():
+    from app.config import settings
+    if not settings.resume_retention_days:
+        return
+    from app.database import AsyncSessionLocal
+    from sqlalchemy import text
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.resume_retention_days)
+    logger.info("purge_stale_resumes.cutoff", cutoff=cutoff.isoformat(), days=settings.resume_retention_days)
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            text("SELECT id, minio_path FROM tailored_resumes WHERE created_at < :cutoff"),
+            {"cutoff": cutoff},
+        )
+        rows = result.fetchall()
+
+    if not rows:
+        logger.info("purge_stale_resumes.nothing_to_purge")
+        return
+
+    from minio import Minio
+    minio_client = Minio(
+        settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        secure=settings.minio_secure,
+    )
+
+    purged = 0
+    errors = 0
+    async with AsyncSessionLocal() as db:
+        for row_id, minio_path in rows:
+            try:
+                if minio_path:
+                    bucket, obj = minio_path.split("/", 1)
+                    minio_client.remove_object(bucket, obj)
+                await db.execute(
+                    text("DELETE FROM tailored_resumes WHERE id = :id"),
+                    {"id": row_id},
+                )
+                purged += 1
+            except Exception as exc:
+                logger.error("purge_stale_resumes.row_error", row_id=str(row_id), error=str(exc))
+                errors += 1
+        await db.commit()
+
+    logger.info("purge_stale_resumes.completed", purged=purged, errors=errors)
+
+
+@celery_app.task
 def retrain_user_model(user_id: str, schema_name: str):
     """
     Retrain a single user's model immediately.
