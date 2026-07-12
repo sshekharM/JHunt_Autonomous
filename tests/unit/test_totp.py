@@ -18,4 +18,4 @@ def test_totp_provisioning_uri():
     secret = pyotp.random_base32()
     uri = pyotp.TOTP(secret).provisioning_uri("user@test.com", issuer_name="jH_ANS")
     assert "jH_ANS" in uri
-    assert "user@test.com" in uri
+    assert "user%40test.com" in uri or "user@test.com" in uri
