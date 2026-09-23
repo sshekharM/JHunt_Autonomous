@@ -70,14 +70,19 @@ async def test_provision_user_schema_validates_name(name, ok):
     engine = MagicMock()
     engine.begin.return_value.__aenter__ = AsyncMock(return_value=conn)
     engine.begin.return_value.__aexit__ = AsyncMock(return_value=False)
-    with patch.object(database, "engine", engine):
+    migrate = AsyncMock()
+    with patch.object(database, "engine", engine), \
+            patch("app.tenant_migrations.migrate_tenant_schema", migrate):
         if ok:
             await database.provision_user_schema(name)
-            assert str(conn.execute.call_args.args[0]) == f'CREATE SCHEMA IF NOT EXISTS "{VALID}"'
+            assert str(conn.execute.call_args_list[0].args[0]) == f'CREATE SCHEMA IF NOT EXISTS "{VALID}"'
+            # tables are created in the same transaction as the schema
+            migrate.assert_awaited_once_with(conn, VALID)
         else:
             with pytest.raises(ValueError):
                 await database.provision_user_schema(name)
             conn.execute.assert_not_called()
+            migrate.assert_not_called()
 
 
 def test_checkin_resets_search_path_and_closes_cursor():
