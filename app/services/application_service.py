@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crawlers.base import ApplicationReceipt, BaseCrawler
+from app.crawlers.registry import crawler_for
 from app.crawlers.session_manager import get_context
 from app.ml.feedback import record_outcome
 from app.security.audit_log import audit
@@ -58,22 +59,8 @@ _VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
 
 
 def _crawler_for_portal(portal: str) -> BaseCrawler:
-    """Lazy import to avoid circular deps and heavy Playwright at import time."""
-    from app.crawlers.naukri import NaukriCrawler
-    from app.crawlers.linkedin import LinkedInCrawler
-    from app.crawlers.glassdoor import GlassdoorCrawler
-    from app.crawlers.indeed import IndeedCrawler
-
-    mapping: dict[str, type[BaseCrawler]] = {
-        "naukri": NaukriCrawler,
-        "linkedin": LinkedInCrawler,
-        "glassdoor": GlassdoorCrawler,
-        "indeed": IndeedCrawler,
-    }
-    cls = mapping.get(portal.lower())
-    if cls is None:
-        raise ValueError(f"No crawler registered for portal: {portal!r}")
-    return cls()
+    """Resolve via the shared registry — the same portal set the crawl task uses."""
+    return crawler_for(portal)
 
 
 async def apply_to_job(
@@ -278,7 +265,8 @@ async def queue_for_hitl(
         from app.tasks.notify import dispatch_activity_digest
         dispatch_activity_digest.delay(user_id)
     except Exception:
-        pass
+        # Notification is best-effort: the application is already queued, so log and continue.
+        logger.warning("application.notify_dispatch_failed", user_id=user_id, exc_info=True)
 
     logger.info("application.hitl_queued", user_id=user_id, application_id=app.id)
     return app.id
