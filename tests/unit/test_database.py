@@ -123,3 +123,38 @@ def test_sessions_do_not_expire_objects_on_commit():
     # Expired attributes would trigger lazy loads, which fail under AsyncSession.
     from app.database import AsyncSessionLocal
     assert AsyncSessionLocal.kw["expire_on_commit"] is False
+
+
+def test_tenant_session_carries_validated_schema():
+    import app.database as database
+    factory = MagicMock()
+    with patch.object(database, "AsyncSessionLocal", factory):
+        database.tenant_session(VALID)
+    factory.assert_called_once_with(info={"tenant_schema": VALID})
+
+
+def test_tenant_session_rejects_bad_name():
+    from app.database import tenant_session
+    with pytest.raises(ValueError):
+        tenant_session("public")
+
+
+def test_each_tenant_transaction_sets_local_search_path():
+    from app.database import _scope_transaction_to_tenant
+    session, conn = MagicMock(info={"tenant_schema": VALID}), MagicMock()
+    _scope_transaction_to_tenant(session, MagicMock(), conn)
+    assert str(conn.execute.call_args.args[0]) == f'SET LOCAL search_path TO "{VALID}", public'
+
+
+def test_shared_session_transactions_are_left_alone():
+    from app.database import _scope_transaction_to_tenant
+    conn = MagicMock()
+    _scope_transaction_to_tenant(MagicMock(info={}), MagicMock(), conn)
+    conn.execute.assert_not_called()
+
+
+def test_tenant_scope_hook_is_registered_on_sessions():
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+    from app.database import _scope_transaction_to_tenant
+    assert event.contains(Session, "after_begin", _scope_transaction_to_tenant)

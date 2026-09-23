@@ -96,3 +96,20 @@ async def test_tenant_session_does_not_leak_search_path_to_shared_sessions(two_t
             {"t": JobApplication.__tablename__},
         )).scalar_one()
         assert visible == 0
+
+
+async def test_tenant_session_keeps_its_schema_after_commit(two_tenants):
+    """AsyncSession releases its connection on commit; the tenant schema must be
+    re-applied for the next transaction, not lost (or taken from a stale connection)."""
+    from app.database import get_tenant_db
+    from app.tenant_models.application import ApplicationStatus, JobApplication
+    a, b = two_tenants
+    await _add_application(b, "B-secret-role")
+    async for db in get_tenant_db(a):
+        db.add(JobApplication(
+            matched_job_id=str(uuid.uuid4()), portal="naukri", portal_job_id="nk-1",
+            job_title="A-role", company="Acme", match_score=0.9, status=ApplicationStatus.pending_hitl,
+        ))
+        await db.commit()
+        titles = list((await db.execute(select(JobApplication.job_title))).scalars())
+    assert titles == ["A-role"]

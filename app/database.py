@@ -1,7 +1,7 @@
 import re
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy import TextClause, event, text
 from app.config import settings
 
@@ -67,11 +67,29 @@ async def get_db():
             await session.close()
 
 
+_TENANT_SCHEMA_KEY = "tenant_schema"
+
+
+def tenant_session(schema_name: str) -> AsyncSession:
+    """A session scoped to a user's private schema for every transaction it runs.
+
+    AsyncSession returns its connection to the pool on each commit (where the
+    search_path is reset), so the schema is applied per transaction with
+    SET LOCAL by _scope_transaction_to_tenant, not once per session.
+    """
+    return AsyncSessionLocal(info={_TENANT_SCHEMA_KEY: validate_schema_name(schema_name)})
+
+
+@event.listens_for(Session, "after_begin")
+def _scope_transaction_to_tenant(session, transaction, connection) -> None:
+    schema_name = session.info.get(_TENANT_SCHEMA_KEY)
+    if schema_name is not None:
+        connection.execute(text(f'SET LOCAL search_path TO "{validate_schema_name(schema_name)}", public'))
+
+
 async def get_tenant_db(schema_name: str):
-    """Return a session scoped to a user's private schema."""
-    stmt = search_path_sql(schema_name)
-    async with AsyncSessionLocal() as session:
-        await session.execute(stmt)
+    """Yield a tenant_session for a user's private schema."""
+    async with tenant_session(schema_name) as session:
         try:
             yield session
         finally:

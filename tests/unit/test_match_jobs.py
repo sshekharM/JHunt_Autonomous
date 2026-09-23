@@ -32,10 +32,11 @@ async def test_match_rejects_invalid_schema_before_sql():
 
 
 @pytest.mark.asyncio
-async def test_match_sets_search_path_to_validated_schema():
+async def test_match_opens_tenant_session_for_validated_schema():
     from app.tasks.match_jobs import _run_match_for_user
     factory, session = _session_factory()
     with patch("app.database.AsyncSessionLocal", factory):
         result = await _run_match_for_user("user-1", VALID)
     assert result["skipped"] == "no_skills"
-    assert str(session.execute.call_args_list[0].args[0]) == f'SET search_path TO "{VALID}", public'
+    # every session in the task is a tenant session for this user's schema
+    assert factory.call_args_list[0].kwargs == {"info": {"tenant_schema": VALID}}
