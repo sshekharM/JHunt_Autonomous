@@ -4,7 +4,8 @@ Stores all crawled jobs before they are matched to individual users.
 """
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Boolean, Text, JSON, UniqueConstraint
+from sqlalchemy import String, DateTime, Boolean, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -25,17 +26,17 @@ class Job(Base):
     location: Mapped[str] = mapped_column(String(256))
     job_url: Mapped[str] = mapped_column(String(1024))
     description: Mapped[str] = mapped_column(Text, default="")
-    skills_required: Mapped[list] = mapped_column(JSON, default=list)
+    skills_required: Mapped[list] = mapped_column(JSONB, default=list)
     salary_range: Mapped[str] = mapped_column(String(256), default="")
     experience_required: Mapped[str] = mapped_column(String(128), default="")
     is_easy_apply: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    extra: Mapped[dict] = mapped_column(JSONB, default=dict)
     posted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     crawled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
