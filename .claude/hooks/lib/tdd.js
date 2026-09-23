@@ -48,6 +48,8 @@ function candidateTests(projectDir, n) {
   if (ext === '.py') {
     out.push(path.join(dir, `test_${base}.py`), path.join(dir, `${base}_test.py`));
     out.push(path.join(dir, 'tests', `test_${base}.py`), path.join(dir, '__tests__', `test_${base}.py`));
+    // Root-level test trees (pytest testpaths = tests), e.g. app/x/foo.py -> tests/unit/test_foo.py.
+    out.push(path.join(projectDir, 'tests', 'unit', `test_${base}.py`), path.join(projectDir, 'tests', `test_${base}.py`));
   } else {
     for (const suf of ['test', 'spec']) {
       out.push(path.join(dir, `${base}.${suf}${ext}`));
