@@ -36,7 +36,7 @@ async def execute_deletion(
 async def _hard_delete(user: User, db: AsyncSession) -> dict:
     """Drop user schema, delete user row. Irreversible."""
     schema = validate_schema_name(user.schema_name)
-    await db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+    await db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))  # nosemgrep -- validated above
     await db.delete(user)
     await db.commit()
     audit("user.hard_deleted", user_id=user.id, resource="user_data")
@@ -78,7 +78,7 @@ async def _anonymise(user: User, db: AsyncSession) -> dict:
     schema = validate_schema_name(user.schema_name)
     # Wipe PII columns in user's schema
     for table in ("profile", "master_resume", "tailored_resumes", "portal_sessions"):
-        await db.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE'))
+        await db.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE'))  # nosemgrep -- validated schema, literal tables
 
     # Nullify PII on user row
     user.email_encrypted = b""

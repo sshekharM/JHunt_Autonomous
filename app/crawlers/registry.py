@@ -37,7 +37,7 @@ def crawler_class_for(portal: str) -> type[BaseCrawler]:
     if entry is None:
         raise ValueError(f"No crawler registered for portal: {portal!r}")
     module_path, class_name = entry
-    crawler_cls: type[BaseCrawler] = getattr(importlib.import_module(module_path), class_name)
+    crawler_cls: type[BaseCrawler] = getattr(importlib.import_module(module_path), class_name)  # nosemgrep -- path from _REGISTRY
     return crawler_cls
 
 

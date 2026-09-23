@@ -103,10 +103,10 @@ async def get_matched_jobs_for_user(
     """
     Return matched jobs for a user from their tenant schema, joined with
     global job metadata to fill in any fields not stored in the tenant table.
-
     Queries the user's private schema `jobs` table ordered by match_score DESC.
     """
-    query = text(f"""
+    query = text(  # nosemgrep -- tenant schema validated inline
+        f"""
         SELECT
             uj.id,
             uj.portal,
@@ -147,7 +147,8 @@ async def get_unmatched_jobs(
     Return global jobs not yet present in the user's tenant schema.
     Used by match_jobs task to find new work per user.
     """
-    query = text(f"""
+    query = text(  # nosemgrep -- tenant schema validated inline
+        f"""
         SELECT gj.*
         FROM public.jobs gj
         WHERE gj.is_active = TRUE

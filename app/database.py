@@ -20,7 +20,7 @@ def validate_schema_name(schema_name: str) -> str:
 
 def search_path_sql(schema_name: str) -> TextClause:
     """SET search_path for a validated tenant schema (then public)."""
-    return text(f'SET search_path TO "{validate_schema_name(schema_name)}", public')
+    return text(f'SET search_path TO "{validate_schema_name(schema_name)}", public')  # nosemgrep -- validated identifier
 
 
 engine = create_async_engine(
@@ -84,7 +84,7 @@ def tenant_session(schema_name: str) -> AsyncSession:
 def _scope_transaction_to_tenant(session, transaction, connection) -> None:
     schema_name = session.info.get(_TENANT_SCHEMA_KEY)
     if schema_name is not None:
-        connection.execute(text(f'SET LOCAL search_path TO "{validate_schema_name(schema_name)}", public'))
+        connection.execute(text(f'SET LOCAL search_path TO "{validate_schema_name(schema_name)}", public'))  # nosemgrep -- validated identifier
 
 
 async def get_tenant_db(schema_name: str):
@@ -100,4 +100,4 @@ async def provision_user_schema(schema_name: str) -> None:
     """Create a new PostgreSQL schema for a user and run tenant migrations."""
     validate_schema_name(schema_name)
     async with engine.begin() as conn:
-        await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+        await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))  # nosemgrep -- validated above
