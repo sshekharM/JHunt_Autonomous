@@ -1,0 +1,57 @@
+{
+  "verdict": "CONCERNS",
+  "findings": [
+    {
+      "category": "duplication",
+      "evidence": "app/crawlers/monster.py:1 vs app/crawlers/shine.py:1",
+      "severity": "high",
+      "fix": "Collapse both into GenericPortalCrawler(BaseCrawler) parameterized by a PortalDescriptor dataclass (base_url, portal_name, login_path, selectors, credentials); register monster and shine as two descriptors. Do not extend this to naukri/linkedin/glassdoor/indeed, whose logic genuinely diverges (35-53% similarity vs 78% for this pair)."
+    },
+    {
+      "category": "duplication",
+      "evidence": "app/tasks/crawl_jobs.py:14 vs app/services/application_service.py:60",
+      "severity": "high",
+      "fix": "Extract a single app/crawlers/registry.py exporting crawler_for_portal(portal: PortalName) -> BaseCrawler, keyed off the PortalName enum so an unregistered member fails at import. Both call sites consume it. The two registries have already drifted: monster and shine are crawlable but not appliable (ValueError)."
+    },
+    {
+      "category": "responsibility",
+      "evidence": "alembic/__init__.py:1",
+      "severity": "high",
+      "fix": "Delete the 0-byte alembic/__init__.py. It gives the migrations directory no responsibility, and turns it into a package named 'alembic' that shadows the installed Alembic distribution whenever the repo root is on sys.path (root conftest.py causes this under pytest), breaking 'from alembic import op'."
+    },
+    {
+      "category": "responsibility",
+      "evidence": "app/tasks/auto_apply.py:48",
+      "severity": "medium",
+      "fix": "apply_matched_jobs() is 219 lines (inner _inner() 204) and holds eligibility selection, billing-cap policy, crawler orchestration, persistence, and notification. Extract select_eligible_jobs(...) and enforce_apply_budget(...), delegate the apply to application_service.apply_to_job(...), leaving the task a thin loop-and-log shell. Repo standard is a 30-line ceiling; 50 functions under app/ exceed it and this is the worst."
+    },
+    {
+      "category": "responsibility",
+      "evidence": "app/services/application_service.py:79",
+      "severity": "medium",
+      "fix": "apply_to_job() is 117 lines and its docstring lists five responsibilities. Keep fetch/acquire-context/call-crawler; move persistence to application_repository.record_application(...) and the ML signal to ml.feedback.record_apply_signal(...)."
+    },
+    {
+      "category": "argument-clump",
+      "evidence": "app/services/application_service.py:79",
+      "severity": "medium",
+      "fix": "Eight parameters containing two clumps: (schema_name, tenant_db, shared_db) is a tenant execution context and (resume_path, cover_letter) is a document pair. Introduce TenantContext and ApplicationDocuments value objects; signature becomes apply_to_job(user_id, job_id, ctx, docs, job_record=None)."
+    },
+    {
+      "category": "argument-clump",
+      "evidence": "app/services/application_service.py:238",
+      "severity": "medium",
+      "fix": "queue_for_hitl() takes portal, portal_job_id, job_title, company, match_score as five loose scalars that are copied field-by-field onto one JobApplication at :248. Pass the matched-job record (or a MatchedJobRef dataclass) instead."
+    }
+  ],
+  "confirmed_legitimate_hubs": [
+    "app/security/audit_log.py",
+    "app/database.py",
+    "app/crawlers/anti_detection.py",
+    "app/crawlers/base.py",
+    "app/config.py",
+    "app/models/user.py",
+    "app/tenant_models/profile.py",
+    "app/tenant_models/application.py"
+  ]
+}

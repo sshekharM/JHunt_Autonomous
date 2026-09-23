@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/routers/applications.py",
+  "member_paths": [
+    "app/routers/applications.py"
+  ],
+  "content_hashes": {
+    "app/routers/applications.py": "a3a5c005cc0c222e"
+  },
+  "content_hash": "ddcf10d1960b07e7",
+  "stale": false
+}

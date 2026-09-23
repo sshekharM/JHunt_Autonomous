@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/models/user.py",
+  "member_paths": [
+    "app/models/user.py"
+  ],
+  "content_hashes": {
+    "app/models/user.py": "e4699a19e3a1d8f1"
+  },
+  "content_hash": "922d2f5645435694",
+  "stale": false
+}

@@ -1,0 +1,89 @@
+{
+  "phase": "brownfield",
+  "iteration": 1,
+  "previous_score": null,
+  "verdict": "PASS",
+  "weighted_average": 8.6,
+  "threshold": 7,
+  "per_criterion_minimum": 5,
+  "provenance": {
+    "evaluated_by": "brownfield planner (self-assessment)",
+    "independent_evaluator_agent_ran": false,
+    "caveat": "No Agent/Task tool was available in this run, so the `evaluator` agent could not be spawned. This is a self-assessment against the same rubric and is therefore weaker evidence than an independent adversarial pass. Re-run `/brownfield --full` in a session with agent spawning, or invoke the evaluator directly, before treating this PASS as independently confirmed."
+  },
+  "hard_gate": {
+    "status": "PASS",
+    "code_graph_exists": true,
+    "code_graph_parses": true,
+    "nodes_non_empty": true,
+    "node_count": 136,
+    "meta_producer": "vendored-ast",
+    "scan_warnings": 0,
+    "cycles": 0,
+    "five_prose_maps_present_and_non_empty": true,
+    "map_bytes": {
+      "codebase-map.md": 1134,
+      "architecture-map.md": 9928,
+      "test-map.md": 5455,
+      "risk-map.md": 11027,
+      "change-strategy.md": 5877
+    }
+  },
+  "criteria": {
+    "completeness": {
+      "score": 8,
+      "notes": "All eleven app/ subpackages plus installer/, alembic/, and tests/ are mapped in architecture-map.md, with per-module public interface, invariants, and error modes. Deduction: codebase-map.md's deterministic path-bucket heuristic files 77 of 136 nodes as 'other', and app/llm/router.py is mis-bucketed as 'api' when it is an LLM provider selector — both noted explicitly in architecture-map.md rather than silently inherited."
+    },
+    "traceability": {
+      "score": 9,
+      "notes": "Every architectural and risk claim cites a file:line or a graph edge. The four HIGH runtime findings (R1-R4) were each traced through their call chain to the failing call site, not inferred from filenames."
+    },
+    "specificity": {
+      "score": 9,
+      "notes": "Risk entries carry quantified metrics: 78% line-similarity for the monster/shine clone pair, 48 of 78 app modules (62%) with zero test reference, 50 functions over the 30-line ceiling with the worst at 219 lines, distinct-importer counts for every hub claim."
+    },
+    "consistency": {
+      "score": 8,
+      "notes": "Numbers reconciled against code-graph.json (136 files, 933 internal edges, 0 cycles, 0 warnings). A contradiction in the generated artifacts was found and documented rather than propagated: coupling-report.md's fan-in counts import edges, not distinct importing files, inflating billing/gates.py (33 edges / 2 importers), ml/matcher.py (32/3), and alembic/__init__.py (49/3). The maps use importer counts and state the caveat in three places."
+    },
+    "actionability": {
+      "score": 9,
+      "notes": "change-strategy.md assigns a concrete lane per finding with justification, sequences them into four waves, names a mandatory Step 0 baseline, lists explicit do-nots tied to evidence, and identifies the two shared chokepoints (database.py, audit_log.py) that would serialize an /auto build."
+    }
+  },
+  "verification_performed": [
+    "Spot-checked 11 modules claimed in architecture-map.md — all exist on disk (app/main.py, app/dependencies.py, app/database.py, app/security/audit_log.py, app/security/ip_allowlist.py, app/security/pii_policy.py, app/crawlers/base.py, app/tenant_models/profile.py, app/tasks/celery_app.py, alembic/env.py, tests/unit/test_matching.py).",
+    "Verified test-map.md commands against pytest.ini (testpaths=tests, asyncio_mode=auto) and confirmed tests/integration/ contains only __init__.py and e2e/ is empty.",
+    "Confirmed R1 by tracing _crawler_for_portal -> IndeedCrawler -> module-level bs4 import, and checking requirements.txt and Dockerfile for the package.",
+    "Confirmed R2 by grepping for every call site of run_tenant_migrations (zero outside alembic/env.py and comments).",
+    "Confirmed R4 by diffing the two crawler registries.",
+    "Confirmed R5/R6 by grepping for importers of ip_allowlist and pii_policy (zero each).",
+    "Quantified duplication with line-level difflib ratios across all six crawlers, distinguishing the one real clone pair from four false positives."
+  ],
+  "known_gaps": [
+    "Test suite was not executed: no virtualenv, pytest absent from the available interpreter (3.14.7 vs project target 3.12), Docker unavailable. All test claims are static.",
+    "perf-baseline.json not captured — app not running and Docker unavailable.",
+    "flag-inventory.md not written: flag-scan.js detected no flags. Incomplete — two in-code runtime toggles (SoftSignals.enabled, activate_plan) behave as flags and are documented in risk-map.md instead.",
+    "naming-clusters.md is empty (0 candidates); its root-noun heuristic only strips a fixed suffix set this codebase does not use. CONTEXT.md was therefore built from source reads.",
+    "Modularity review was performed inline rather than by the modularity-reviewer agent (same missing-Agent-tool limitation)."
+  ],
+  "artifacts": [
+    "specs/brownfield/code-graph.json",
+    "specs/brownfield/code-graph.meta.json",
+    "specs/brownfield/symbol-map.md",
+    "specs/brownfield/dependency-graph.md",
+    "specs/brownfield/coupling-report.md",
+    "specs/brownfield/codebase-map.md",
+    "specs/brownfield/architecture-map.md",
+    "specs/brownfield/test-map.md",
+    "specs/brownfield/risk-map.md",
+    "specs/brownfield/change-strategy.md",
+    "specs/brownfield/ci-map.md",
+    "specs/brownfield/modularity-pack.md",
+    "specs/brownfield/naming-clusters.md",
+    "specs/brownfield/wiki/WIKI.md",
+    "specs/design/CONTEXT.md",
+    "specs/reviews/modularity-review.md",
+    "specs/reviews/modularity-verdict.json"
+  ]
+}

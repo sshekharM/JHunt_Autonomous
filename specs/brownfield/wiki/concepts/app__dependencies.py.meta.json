@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/dependencies.py",
+  "member_paths": [
+    "app/dependencies.py"
+  ],
+  "content_hashes": {
+    "app/dependencies.py": "4970a54f3f90b443"
+  },
+  "content_hash": "d39610524eb2fed7",
+  "stale": false
+}

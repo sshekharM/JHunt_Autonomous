@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/billing/gates.py",
+  "member_paths": [
+    "app/billing/gates.py"
+  ],
+  "content_hashes": {
+    "app/billing/gates.py": "8ea3d46c60c2781c"
+  },
+  "content_hash": "b72d932959ab5edc",
+  "stale": false
+}

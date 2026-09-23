@@ -1,0 +1,13 @@
+{
+  "status": "failed",
+  "mode": "placeholder",
+  "graph": "placeholder",
+  "wiki": "placeholder",
+  "source_files": 136,
+  "indexed_files": 0,
+  "dirty_files": 0,
+  "estimated_source_tokens": 0,
+  "estimated_navigation_tokens": 9,
+  "last_refresh": "2026-09-23T06:31:46.703Z",
+  "error": "missing code_index.py"
+}

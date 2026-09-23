@@ -1,0 +1,491 @@
+{
+  "version": 1,
+  "purpose": "Kernel/pack partition: the single source of truth for what a harness install contains. tools/check-partition.js enforces that no kernel unit hard-references a pack; tools/pack-install.js and .claude/scripts/scaffold-copy.js both compose installs from it. Lives in .claude/config/ (not docs/) because shipped machinery reads it.",
+  "baseline_tag": "v5-preserve",
+  "kernel": {
+    "skill": [
+      "change",
+      "code-gen",
+      "gate",
+      "refactor",
+      "vibe"
+    ],
+    "agent": [
+      "code-reviewer",
+      "implementer",
+      "security-reviewer"
+    ],
+    "hook": [
+      "check-git-hooks",
+      "pre-bash-gate",
+      "pre-write-gate",
+      "record-run",
+      "verify-on-save"
+    ],
+    "githook": [
+      "commit-msg",
+      "pre-commit",
+      "prepare-commit-msg"
+    ],
+    "lib": [
+      "agent-model",
+      "bash-targets",
+      "common",
+      "contexts",
+      "gate-registry",
+      "gate-result",
+      "gates-early",
+      "gates-quality",
+      "git-safety",
+      "layers",
+      "length",
+      "pre-commit-util",
+      "prefix-cache",
+      "record-skills",
+      "review-policy",
+      "secrets",
+      "security-patterns",
+      "security-scan",
+      "sensor-guidance",
+      "sensor-outcomes",
+      "sensor-schema",
+      "sensor-tier",
+      "simulate",
+      "tdd",
+      "toolchain",
+      "trust-boundary"
+    ],
+    "script": [
+      "context-pack",
+      "human-codebase",
+      "merge-review-verdicts",
+      "pr-walkthrough",
+      "quality-card",
+      "review-commit-msg",
+      "review-tier",
+      "run-gate-checks",
+      "security-scan"
+    ]
+  },
+  "packs": {
+    "planning": {
+      "why": "GAN/SDLC pipeline. 0 spawns of generator/evaluator/planner/design-critic in 23d telemetry; no specs/brd|spec|design artifacts ever produced in this repo.",
+      "skill": [
+        "advise",
+        "auto",
+        "brd",
+        "build",
+        "clarify",
+        "deploy",
+        "design",
+        "evaluate",
+        "feature",
+        "implement",
+        "pr-respond",
+        "spec",
+        "sprint",
+        "status",
+        "test",
+        "tracker-publish"
+      ],
+      "agent": [
+        "advisor",
+        "design-critic",
+        "evaluator",
+        "generator",
+        "planner"
+      ],
+      "script": [
+        "amendment-provenance-check",
+        "auto-merge",
+        "brd-taxonomy-check",
+        "budget-state",
+        "build-chain",
+        "build-chain-state",
+        "build-lane",
+        "canvas-semantic-check",
+        "canvas-sync-check",
+        "constraints-extract",
+        "contract-accessibility-default",
+        "cr-index",
+        "env-diff",
+        "feature-lane",
+        "flag-scan",
+        "impact-classifier",
+        "model-tier",
+        "ownership-check",
+        "pipeline-snapshot",
+        "pipeline-state-readers",
+        "pipeline-status",
+        "plan-confidence",
+        "pr-body",
+        "pr-poll",
+        "record-modularity-review",
+        "seam-confidence",
+        "story-clusters",
+        "team-policy",
+        "topologies",
+        "trace-check",
+        "validate-canvas",
+        "validate-contract",
+        "verification-matrix-gate",
+        "vertical-glossary-pack",
+        "vocabulary-check",
+        "wave-plan",
+        "wave-pr"
+      ],
+      "lib": [
+        "canvas",
+        "canvas-sync",
+        "contract-schema",
+        "gates-planning",
+        "story-graph"
+      ],
+      "hook": [
+        "concurrency-gate"
+      ]
+    },
+    "brownfield": {
+      "why": "Only needed on existing codebases. Includes the 10-control nav/token-governor stack, which false-blocked 3x in one session.",
+      "skill": [
+        "brownfield",
+        "code-map",
+        "context",
+        "seam-finder"
+      ],
+      "agent": [
+        "codebase-explorer",
+        "modularity-reviewer"
+      ],
+      "script": [
+        "ask-codebase",
+        "context-retrieve",
+        "context-store",
+        "modularity-pack",
+        "naming-clusters",
+        "nav-brownfield-maps",
+        "nav-cochange",
+        "nav-concepts",
+        "nav-graph-index",
+        "nav-index",
+        "nav-mcp-server",
+        "nav-query",
+        "nav-telemetry",
+        "navigation-refresh",
+        "run-compact",
+        "search-compact",
+        "tool-output-pack"
+      ],
+      "lib": [
+        "drift",
+        "modularity-pack",
+        "naming-clusters",
+        "search-scope",
+        "shell-lex",
+        "verbose-command"
+      ],
+      "hook": [
+        "graph-refresh",
+        "token-advisor"
+      ]
+    },
+    "compliance": {
+      "why": "Client CISO mandate. Real external commitment, but not SDLC - belongs in its own installable pack.",
+      "skill": [
+        "attestation",
+        "portfolio-rollup",
+        "provision"
+      ],
+      "agent": [],
+      "script": [
+        "attestation-bundle",
+        "attestation-io",
+        "canonical-json",
+        "fleet-retrofit",
+        "fleet-retrofit-core",
+        "generate-attestation",
+        "generate-codeowners",
+        "oscal-emit",
+        "portfolio-rollup",
+        "portfolio-rollup-core",
+        "provision-environments",
+        "provision-protection",
+        "ruleset-diff",
+        "scaffold-security-baseline",
+        "terraform-emit",
+        "terraform-verify"
+      ],
+      "lib": [
+        "gates-strict",
+        "security-baseline"
+      ],
+      "hook": []
+    },
+    "legacy-discipline": {
+      "why": "Brownfield-editing discipline (coverage/pinning/sprouting/AT-first). Statically required by gate-registry today; that edge is what drags it into the kernel.",
+      "skill": [
+        "checking-coverage-before-change",
+        "checking-migration-safety",
+        "keeping-refactors-pure",
+        "pinning-down-behavior",
+        "reuse-or-justify",
+        "sprouting-instead-of-editing",
+        "upgrading-dependencies",
+        "writing-acceptance-tests-first"
+      ],
+      "agent": [],
+      "script": [
+        "at-first-gate",
+        "impact-scope",
+        "legacy-discipline-gate",
+        "record-at-red",
+        "record-coverage-verdict",
+        "record-reuse-decision",
+        "reuse-scout",
+        "sprout-diff-gate"
+      ],
+      "lib": [
+        "constitution-invariants",
+        "coverage-preflight",
+        "gates-legacy",
+        "impact-scope",
+        "legacy-bite-check",
+        "legacy-discipline-relatedness",
+        "reuse-scout",
+        "sprout-classify",
+        "sprout-symbol-check"
+      ],
+      "hook": []
+    },
+    "verification": {
+      "why": "Runtime/regression verification beyond the commit gate. Needed for UI products, not for library or CLI work.",
+      "skill": [],
+      "agent": [],
+      "script": [
+        "approve-fixtures",
+        "approved-fixtures-gate",
+        "contract-drift-gate",
+        "coupling-gate",
+        "coverage-diff",
+        "cycle-gate",
+        "deep-mutation",
+        "duplication-gate",
+        "flake-detector",
+        "flake-history",
+        "live-externals-gate",
+        "local-regression-gate",
+        "mutation-gate",
+        "mutation-smoke",
+        "observability-gate",
+        "perf-baseline",
+        "perf-smell-gate",
+        "regression-gate",
+        "slo-check",
+        "stub-smell-gate",
+        "test-deletion-gate"
+      ],
+      "lib": [
+        "coupling-gate",
+        "cycle-gate",
+        "diff-hunks",
+        "duplication-gate",
+        "fixtures",
+        "gates-live-externals",
+        "gates-verification",
+        "live-externals-gate",
+        "local-regression-gate",
+        "mutation-gate",
+        "prom-parse",
+        "regression-gate",
+        "stub-smell",
+        "test-deletion-gate"
+      ],
+      "hook": []
+    },
+    "telemetry": {
+      "why": "Observability of the harness itself. Report-only; none of it gates. sensor-outcomes.jsonl was never written, so none of it has ever produced a decision.",
+      "skill": [
+        "agent-readiness",
+        "promote",
+        "retro"
+      ],
+      "agent": [],
+      "script": [
+        "agent-readiness",
+        "archive-state",
+        "assert-readiness-ratchet",
+        "certification-report",
+        "ci-ingest",
+        "control-budget-gate",
+        "cost-report",
+        "drift-report",
+        "harness-coverage",
+        "loop-health",
+        "promote-recommendation",
+        "readiness-digest",
+        "run-custom-sensors",
+        "runs-retention",
+        "sensor-canary",
+        "sensor-comprehension-debt",
+        "sensor-value-report",
+        "sensor-withhold",
+        "telemetry-ledger-rotate",
+        "telemetry-memory",
+        "telemetry-phase-eval",
+        "telemetry-pipeline-gauges",
+        "telemetry-skill-helpers",
+        "update-readiness-baseline",
+        "validate-harness-manifest",
+        "validate-recommendations",
+        "validate-sensor-waivers"
+      ],
+      "lib": [
+        "agent-readiness",
+        "agent-readiness-project",
+        "agent-readiness-shared",
+        "control-budget",
+        "loop-health",
+        "merge-provenance",
+        "stale-stamp",
+        "withhold-verdicts"
+      ],
+      "hook": [
+        "auto-continue-on-stop",
+        "review-on-stop"
+      ]
+    },
+    "domain": {
+      "why": "Vertical/framework-specific content. Zero coupling to the SDLC machinery.",
+      "skill": [
+        "author-prompt-surface",
+        "deepagents-code",
+        "fastapi-code",
+        "install-framework-packs",
+        "langchain-code",
+        "langgraph-code",
+        "pe-ic-memo",
+        "react-code"
+      ],
+      "agent": [],
+      "script": [],
+      "lib": [],
+      "hook": []
+    },
+    "scaffold": {
+      "why": "Project initialization + harness distribution. Separate lifecycle from the SDLC lanes.",
+      "skill": [
+        "fix-from-diagnostics",
+        "scaffold-upgrade"
+      ],
+      "agent": [],
+      "script": [
+        "diagnostics-shard",
+        "scaffold-apply",
+        "scaffold-copy",
+        "scaffold-encoding",
+        "scaffold-render",
+        "scaffold-upgrade",
+        "scaffold-vertical-status"
+      ],
+      "lib": [
+        "diagnostics-parse"
+      ],
+      "hook": [
+        "artifact-guard"
+      ]
+    },
+    "dist": {
+      "why": "Harness distribution and self-benchmarking: packaging SKUs, cutting releases, watching upstream, replaying the harness's own telemetry. Maintainer-only — a scaffolded product never runs these.",
+      "skill": [],
+      "agent": [],
+      "script": [
+        "nav-bench",
+        "package-sku",
+        "release-skus",
+        "replay-telemetry",
+        "upstream-watch"
+      ],
+      "lib": [],
+      "hook": []
+    }
+  },
+  "rule": "A kernel unit may not hard-reference a pack unit, AND no composed profile may hard-reference a pack it does not install (profile-closure). Declared exceptions live in accepted_edges. Enforced by tools/check-partition.js --strict.",
+  "resolution_policy": {
+    "move-callee-to-kernel": "the callee is infrastructure the kernel genuinely needs",
+    "move-caller-to-pack": "the caller is pack content that was mis-homed",
+    "make-optional": "the call degrades cleanly when the pack is absent (try/catch + skip, reported not silent)"
+  },
+  "accepted_edges": [
+    {
+      "from": "skill:refactor",
+      "to": "skill:code-map",
+      "why": "Caller lookup for rename/move blast radius. The whole block is already conditional on specs/brownfield/code-graph.json existing, which only happens when the brownfield pack is installed — /refactor works without it. Prose conditionality the checker cannot see."
+    },
+    {
+      "from": "skill:design",
+      "to": "script:modularity-pack",
+      "why": "/design --delta Step D3.5 refreshes the modularity pack ONLY if specs/brownfield/ already exists ('If it exists, refresh the pack') — i.e. when brownfield has run. A greenfield/core install never reaches this conditional step. Prose conditionality the checker cannot see, same case as skill:refactor -> skill:code-map."
+    },
+    {
+      "from": "skill:design",
+      "to": "agent:modularity-reviewer",
+      "why": "Spawned in the same conditional /design --delta Step D3.5 as script:modularity-pack, only when a code-graph exists (brownfield installed). Greenfield delta reviews skip it. Prose conditionality the checker cannot see."
+    },
+    {
+      "from": "script:scaffold-apply",
+      "to": "script:navigation-refresh",
+      "why": "scaffold-apply is the distribution installer; it only ever executes from the full harness source via `node $CLAUDE_PLUGIN_ROOT/scripts/scaffold-apply.js` (never from a downstream install against itself), where every pack is present. A composed core install ships this file as inert reference content and never runs it, so the require is always satisfied at the point of execution."
+    },
+    {
+      "from": "script:scaffold-apply",
+      "to": "script:scaffold-security-baseline",
+      "why": "Same as scaffold-apply -> navigation-refresh: the installer runs only from the full harness source ($CLAUDE_PLUGIN_ROOT), where the compliance pack is present. Guarding the require instead would add a silent-skip path to a security-baseline install step — worse than a declared, reviewed exception."
+    },
+    {
+      "from": "script:scaffold-apply",
+      "to": "lib:security-baseline",
+      "why": "Pulled in transitively by scaffold-security-baseline during the same installer run. scaffold-apply executes only from the full harness source ($CLAUDE_PLUGIN_ROOT), where the compliance pack is present."
+    }
+  ],
+  "profiles": {
+    "kernel": {
+      "packs": [],
+      "why": "The three lanes and the commit gate. Nothing that assumes a pipeline, an existing codebase, or a client mandate."
+    },
+    "core": {
+      "packs": [
+        "planning",
+        "verification",
+        "legacy-discipline",
+        "telemetry",
+        "scaffold"
+      ],
+      "why": "Greenfield product work: the SDLC pipeline, runtime verification, and the disciplines around editing code."
+    },
+    "brownfield": {
+      "packs": [
+        "planning",
+        "verification",
+        "legacy-discipline",
+        "telemetry",
+        "scaffold",
+        "brownfield"
+      ],
+      "why": "Existing-code work: core plus the code-graph, nav and seam tooling."
+    },
+    "full": {
+      "packs": [
+        "planning",
+        "verification",
+        "legacy-discipline",
+        "telemetry",
+        "scaffold",
+        "brownfield",
+        "compliance",
+        "domain",
+        "dist"
+      ],
+      "why": "Everything, including the client compliance stack and the vertical/framework packs."
+    }
+  }
+}

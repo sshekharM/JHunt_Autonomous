@@ -67,17 +67,3 @@ package-lock.json
 .claude/state/nav-telemetry-summary.json
 .claude/tdd-guard/
 .claude/claude-security-guidance.local.md
-
-# --- Restored from pre-scaffold .gitignore ---
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg
-env/
-.env.*
-!.env.example
-.DS_Store
-Thumbs.db
-*.log
-data/minio/

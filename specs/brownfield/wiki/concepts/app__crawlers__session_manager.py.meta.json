@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/crawlers/session_manager.py",
+  "member_paths": [
+    "app/crawlers/session_manager.py"
+  ],
+  "content_hashes": {
+    "app/crawlers/session_manager.py": "602a0910c6541803"
+  },
+  "content_hash": "19cfc78b407e0c90",
+  "stale": false
+}

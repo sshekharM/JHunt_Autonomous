@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/crawlers/indeed.py",
+  "member_paths": [
+    "app/crawlers/indeed.py"
+  ],
+  "content_hashes": {
+    "app/crawlers/indeed.py": "f1540853bd99a61a"
+  },
+  "content_hash": "ebadca60261a8903",
+  "stale": false
+}

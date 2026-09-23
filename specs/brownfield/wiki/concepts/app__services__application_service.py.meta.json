@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/services/application_service.py",
+  "member_paths": [
+    "app/services/application_service.py"
+  ],
+  "content_hashes": {
+    "app/services/application_service.py": "cb9df5998db233ca"
+  },
+  "content_hash": "77f847529714c06b",
+  "stale": false
+}

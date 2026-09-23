@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/crawlers/anti_detection.py",
+  "member_paths": [
+    "app/crawlers/anti_detection.py"
+  ],
+  "content_hashes": {
+    "app/crawlers/anti_detection.py": "34224ab49fb21502"
+  },
+  "content_hash": "879b29fb406a0b89",
+  "stale": false
+}
