@@ -78,3 +78,48 @@ async def test_provision_user_schema_validates_name(name, ok):
             with pytest.raises(ValueError):
                 await database.provision_user_schema(name)
             conn.execute.assert_not_called()
+
+
+def test_checkin_resets_search_path_and_closes_cursor():
+    from app.database import _reset_search_path
+    conn = MagicMock()
+    _reset_search_path(conn, MagicMock())
+    conn.cursor.return_value.execute.assert_called_once_with("RESET search_path")
+    conn.cursor.return_value.close.assert_called_once()
+
+
+def test_checkin_closes_cursor_even_if_reset_fails():
+    from app.database import _reset_search_path
+    conn = MagicMock()
+    conn.cursor.return_value.execute.side_effect = RuntimeError("connection lost")
+    with pytest.raises(RuntimeError):
+        _reset_search_path(conn, MagicMock())
+    conn.cursor.return_value.close.assert_called_once()
+
+
+def test_checkin_ignores_invalidated_connection():
+    from app.database import _reset_search_path
+    _reset_search_path(None, MagicMock())  # must not raise
+
+
+def test_checkin_hook_is_registered_on_engine_pool():
+    from sqlalchemy import event
+    from app.database import _reset_search_path, engine
+    assert event.contains(engine.sync_engine, "checkin", _reset_search_path)
+
+
+def test_engine_echo_follows_development_env():
+    from app.config import settings
+    from app.database import engine
+    assert engine.echo is (settings.app_env == "development")
+
+
+def test_engine_pings_pooled_connections_before_use():
+    from app.database import engine
+    assert engine.pool._pre_ping is True
+
+
+def test_sessions_do_not_expire_objects_on_commit():
+    # Expired attributes would trigger lazy loads, which fail under AsyncSession.
+    from app.database import AsyncSessionLocal
+    assert AsyncSessionLocal.kw["expire_on_commit"] is False

@@ -2,7 +2,7 @@ import re
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import TextClause, text
+from sqlalchemy import TextClause, event, text
 from app.config import settings
 
 # Shape produced by app.security.encryption.schema_name_from_thumbprint:
@@ -29,7 +29,24 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    # Tenants share table names but not types: a statement prepared under one
+    # tenant's search_path binds that schema's enum types, and reusing it for
+    # another tenant fails. Disable asyncpg's per-connection statement cache.
+    connect_args={"prepared_statement_cache_size": 0},
 )
+
+
+@event.listens_for(engine.sync_engine, "checkin")
+def _reset_search_path(dbapi_connection, connection_record) -> None:
+    """Drop any tenant search_path before a connection goes back to the pool,
+    so the next session (tenant or shared) cannot read the previous tenant's tables."""
+    if dbapi_connection is None:
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("RESET search_path")
+    finally:
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
