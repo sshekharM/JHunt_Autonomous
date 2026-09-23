@@ -1,0 +1,28 @@
+# Test CI — runs the pytest suite on Python 3.12 (the Dockerfile's runtime).
+# The suite is self-contained: root conftest.py sets dummy secrets and all
+# external services are mocked, so no database or Redis service is needed.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest -q
