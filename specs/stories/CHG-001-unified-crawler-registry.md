@@ -44,4 +44,4 @@ AC coverage:
   - AC4: test_lookup_is_case_insensitive, test_unknown_portal_raises_value_error, test_registry_resolves_classes_without_instantiating, test_crawl_portal_normalises_portal_name_case
   - AC5: test_registry_import_is_lazy (subprocess; asserts no crawler modules and no playwright)
 Review: specs/reviews/code-review-verdict.json — CR-001 BLOCK (Playwright via base import) fixed; CR-002 (sys.modules pop) and CR-004 (case normalisation) fixed.
-Follow-up: app/routers/admin/crawls.py:9 keeps a third hardcoded portal list (admin-triggered crawls reject monster/shine) — pre-existing, out of scope; swap to registry.is_supported in a separate change.
+Follow-up (resolved in a separate commit): app/routers/admin/crawls.py:9 kept a third hardcoded portal list (admin-triggered crawls rejected monster/shine). It now uses registry.is_supported and lower-cases the portal; covered by tests/unit/test_crawls.py.
