@@ -17,11 +17,11 @@ DESCRIPTION_SNIPPET_LEN = 500
 
 
 async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
-    from app.database import AsyncSessionLocal
+    from app.database import AsyncSessionLocal, search_path_sql
     from app.services.job_service import get_unmatched_jobs
     from app.ml.matcher import compute_match
     from app.ml.feedback import compute_user_score_adjustment
-    from sqlalchemy import select, text
+    from sqlalchemy import select
 
     from app.tenant_models.skill import UserSkill
     from app.tenant_models.job import MatchedJob
@@ -30,7 +30,7 @@ async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
     high_match_count = 0
 
     async with AsyncSessionLocal() as shared_db:
-        await shared_db.execute(text(f'SET search_path TO "{schema_name}", public'))
+        await shared_db.execute(search_path_sql(schema_name))
         result = await shared_db.execute(select(UserSkill))
         skills = result.scalars().fetchall()
 
@@ -46,13 +46,13 @@ async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
         return {"user_id": user_id, "matched": 0, "skipped": "no_new_jobs"}
 
     async with AsyncSessionLocal() as tenant_db:
-        await tenant_db.execute(text(f'SET search_path TO "{schema_name}", public'))
+        await tenant_db.execute(search_path_sql(schema_name))
         score_adjustments = await compute_user_score_adjustment(tenant_db)
 
     high_match_jobs = []
 
     async with AsyncSessionLocal() as tenant_db:
-        await tenant_db.execute(text(f'SET search_path TO "{schema_name}", public'))
+        await tenant_db.execute(search_path_sql(schema_name))
 
         for job in unmatched:
             job_skills = job.get("skills_required") or []
