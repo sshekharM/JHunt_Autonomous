@@ -2,6 +2,8 @@ version: "3.9"
 
 services:
   db:
+    security_opt:
+      - no-new-privileges:true
     image: postgres:16-alpine
     restart: always
     environment:
@@ -17,6 +19,8 @@ services:
       retries: 5
 
   redis:
+    security_opt:
+      - no-new-privileges:true
     image: redis:7-alpine
     restart: always
     volumes:
@@ -28,6 +32,8 @@ services:
       retries: 5
 
   minio:
+    security_opt:
+      - no-new-privileges:true
     image: minio/minio:latest
     restart: always
     environment:
@@ -43,6 +49,8 @@ services:
       retries: 3
 
   app:
+    security_opt:
+      - no-new-privileges:true
     image: ${APP_IMAGE:-jhans-app:latest}
     restart: always
     env_file: .env
@@ -68,6 +76,8 @@ services:
       retries: 3
 
   worker:
+    security_opt:
+      - no-new-privileges:true
     image: ${APP_IMAGE:-jhans-worker:latest}
     restart: always
     env_file: .env
@@ -86,6 +96,8 @@ services:
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
 
   beat:
+    security_opt:
+      - no-new-privileges:true
     image: ${APP_IMAGE:-jhans-worker:latest}
     restart: always
     env_file: .env
@@ -100,12 +112,14 @@ services:
     command: celery -A app.tasks.celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 
   nginx:
+    security_opt:
+      - no-new-privileges:true
     image: nginx:alpine
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:

@@ -16,8 +16,8 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -53,8 +53,8 @@ jobs:
       POSTGRES_PASSWORD: jhans_ci
       POSTGRES_DB: jhans_test
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -63,3 +63,19 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run integration tests
         run: pytest -q tests/integration
+
+  # nginx/nginx.conf is mounted into conf.d by docker-compose.prod.yml; check it
+  # parses and loads (self-signed throwaway certs stand in for the real ones).
+  nginx-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: nginx -t
+        run: |
+          mkdir -p ssl
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj "/CN=ci" \
+            -keyout ssl/key.pem -out ssl/cert.pem
+          docker run --rm --add-host app:127.0.0.1 \
+            -v "$PWD/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            -v "$PWD/ssl:/etc/nginx/ssl:ro" \
+            nginx:alpine nginx -t

@@ -16,7 +16,7 @@ COMPOSE_FILES = ["docker-compose.yml"]
 if sys.platform == "win32":
     COMPOSE_FILES.append("docker-compose.windows.yml")
 
-HEALTH_URL = "http://localhost:8000/health"
+HEALTH_URL = "http://localhost:8000/api/health"
 HEALTH_TIMEOUT = 120  # seconds
 
 
@@ -74,20 +74,21 @@ def _wait_for_health(progress_callback, log_callback) -> bool:
     log_callback("Waiting for jH_ANS API to become ready...")
     deadline = time.time() + HEALTH_TIMEOUT
     attempt = 0
+    last_error = None
     while time.time() < deadline:
         attempt += 1
         elapsed = int(time.time() - (deadline - HEALTH_TIMEOUT))
         pct = min(90 + int(elapsed / HEALTH_TIMEOUT * 10), 99)
         progress_callback(pct, f"Waiting for services to be ready... ({elapsed}s)")
         try:
-            with urllib.request.urlopen(HEALTH_URL, timeout=3) as resp:
+            with urllib.request.urlopen(HEALTH_URL, timeout=3) as resp:  # nosemgrep -- constant localhost health probe
                 if resp.status == 200:
                     log_callback(f"Health check passed after {elapsed}s.")
                     return True
-        except Exception:
-            pass
+        except (urllib.error.URLError, OSError) as exc:
+            last_error = exc  # API not accepting connections yet; keep polling
         time.sleep(3)
-    log_callback(f"Health check timed out after {HEALTH_TIMEOUT}s.")
+    log_callback(f"Health check timed out after {HEALTH_TIMEOUT}s (last error: {last_error}).")
     return False
 
 
