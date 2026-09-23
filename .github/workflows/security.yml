@@ -36,7 +36,7 @@ jobs:
           python-version: '3.12'
       - name: Static analysis (Semgrep)
         run: |
-          python -m pip install semgrep==1.90.0
+          python -m pip install semgrep==1.90.0 "setuptools<81"  # semgrep 1.90 deps import pkg_resources
           # `semgrep ci` needs a Semgrep Cloud token and has no --error flag;
           # scan with the public default ruleset and fail on any finding.
           semgrep scan --config p/default --error --metrics=off
