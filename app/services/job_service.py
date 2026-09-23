@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from app.database import validate_schema_name
 from app.models.job import Job
 from app.security.audit_log import audit
 import structlog
@@ -124,7 +125,7 @@ async def get_matched_jobs_for_user(
             gj.is_easy_apply,
             gj.skills_required,
             gj.posted_at
-        FROM "{schema_name}".jobs uj
+        FROM "{validate_schema_name(schema_name)}".jobs uj
         LEFT JOIN public.jobs gj
             ON gj.portal = uj.portal AND gj.portal_job_id = uj.portal_job_id
         WHERE uj.is_active = TRUE
@@ -151,7 +152,7 @@ async def get_unmatched_jobs(
         FROM public.jobs gj
         WHERE gj.is_active = TRUE
           AND NOT EXISTS (
-              SELECT 1 FROM "{schema_name}".jobs uj
+              SELECT 1 FROM "{validate_schema_name(schema_name)}".jobs uj
               WHERE uj.portal = gj.portal
                 AND uj.portal_job_id = gj.portal_job_id
           )
