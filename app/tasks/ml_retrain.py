@@ -7,7 +7,8 @@ Phase 2: Re-weights the TF-IDF match threshold per portal using success rates.
 Phase 5: Full per-skill boosting via gradient feedback loop.
 """
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from app.config import settings
 from app.tasks.celery_app import celery_app
 from app.security.audit_log import audit
 import structlog
@@ -43,12 +44,11 @@ async def _retrain_for_user(user_id: str, schema_name: str) -> dict:
 
     # Aggregate per portal: positives, negatives, total
     portal_stats: dict[str, dict] = {}
-    for portal, outcome, avg_score, count in rows:
+    for portal, outcome, _avg_score, count in rows:
         if portal not in portal_stats:
-            portal_stats[portal] = {"pos": 0, "neg": 0, "total": 0, "avg_positive_score": 0.0}
+            portal_stats[portal] = {"pos": 0, "neg": 0, "total": 0}
         if outcome in _POSITIVE_OUTCOMES:
             portal_stats[portal]["pos"] += count
-            portal_stats[portal]["avg_positive_score"] = float(avg_score or 0)
         elif outcome in _NEGATIVE_OUTCOMES:
             portal_stats[portal]["neg"] += count
         portal_stats[portal]["total"] += count
@@ -165,55 +165,60 @@ def purge_stale_resumes():
         raise
 
 
-async def _purge_stale_resumes_async():
-    from app.config import settings
-    if not settings.resume_retention_days:
-        return
+async def _tenant_schemas() -> list[str]:
+    """Schema names of every user whose tenant schema has been provisioned."""
     from app.database import AsyncSessionLocal
-    from sqlalchemy import text
-    from datetime import datetime, timezone, timedelta
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.resume_retention_days)
-    logger.info("purge_stale_resumes.cutoff", cutoff=cutoff.isoformat(), days=settings.resume_retention_days)
+    from app.models.user import User
+    from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            text("SELECT id, minio_path FROM tailored_resumes WHERE created_at < :cutoff"),
-            {"cutoff": cutoff},
-        )
-        rows = result.fetchall()
+        result = await db.execute(select(User.schema_name).where(User.schema_name != ""))
+        return list(result.scalars())
 
-    if not rows:
-        logger.info("purge_stale_resumes.nothing_to_purge")
-        return
 
-    from minio import Minio
-    minio_client = Minio(
-        settings.minio_endpoint,
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret_key,
-        secure=settings.minio_secure,
-    )
+async def _purge_tenant_resumes(schema_name: str, cutoff: datetime) -> tuple[int, int]:
+    """Delete one tenant's stale tailored-resume objects and mark their rows purged
+    (rows are kept: applications reference them). Returns (purged, errors)."""
+    from app.database import tenant_session
+    from app.services import storage_service
+    from app.tenant_models.resume import TailoredResume
+    from sqlalchemy import select
 
-    purged = 0
-    errors = 0
-    async with AsyncSessionLocal() as db:
-        for row_id, minio_path in rows:
+    purged = errors = 0
+    async with tenant_session(schema_name) as db:
+        stale = await db.execute(select(TailoredResume).where(
+            TailoredResume.generated_at < cutoff, TailoredResume.purged.is_(False)))
+        for resume in stale.scalars():
             try:
-                if minio_path:
-                    bucket, obj = minio_path.split("/", 1)
-                    minio_client.remove_object(bucket, obj)
-                await db.execute(
-                    text("DELETE FROM tailored_resumes WHERE id = :id"),
-                    {"id": row_id},
-                )
-                purged += 1
+                await storage_service.delete_object(resume.minio_key)
             except Exception as exc:
-                logger.error("purge_stale_resumes.row_error", row_id=str(row_id), error=str(exc))
+                logger.error("purge_stale_resumes.object_failed", schema=schema_name, error=str(exc))
                 errors += 1
+                continue
+            resume.purged = True
+            purged += 1
         await db.commit()
+    return purged, errors
 
-    logger.info("purge_stale_resumes.completed", purged=purged, errors=errors)
+
+async def _purge_stale_resumes_async() -> dict:
+    """Purge tailored resumes older than resume_retention_days in every tenant."""
+    totals = {"tenants": 0, "purged": 0, "errors": 0}
+    if not settings.resume_retention_days:
+        return totals
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.resume_retention_days)
+    for schema_name in await _tenant_schemas():
+        totals["tenants"] += 1
+        try:
+            purged, errors = await _purge_tenant_resumes(schema_name, cutoff)
+        except Exception as exc:
+            logger.error("purge_stale_resumes.tenant_failed", schema=schema_name, error=str(exc))
+            totals["errors"] += 1
+            continue
+        totals["purged"] += purged
+        totals["errors"] += errors
+    logger.info("purge_stale_resumes.completed", **totals)
+    return totals
 
 
 @celery_app.task
