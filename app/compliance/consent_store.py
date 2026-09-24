@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.compliance.dpdpa import ConsentRecord
+from app.security.audit_log import audit
 
 
 CURRENT_CONSENT_VERSION = "1.0"
@@ -40,4 +41,11 @@ async def record_consent(
     )
     db.add(record)
     await db.commit()
+    # IP and user agent stay in the consent record only, not the log stream.
+    audit("consent.granted", user_id=user_id, details={
+        "consent_version": CURRENT_CONSENT_VERSION,
+        "consented_to_auto_apply": consented_to_auto_apply,
+        "consented_to_llm_processing": consented_to_llm_processing,
+        "llm_choice": llm_choice,
+    })
     return record
