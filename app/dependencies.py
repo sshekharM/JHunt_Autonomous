@@ -5,7 +5,7 @@ from typing import Optional
 from app.database import get_db, get_tenant_db
 from app.models.user import User
 from app.models.admin import AdminUser, AdminRole
-from app.services.auth_service import decode_access_token
+from app.services.auth_service import decode_access_token, session_user_id
 
 
 async def get_current_user(
@@ -16,10 +16,7 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated."
         )
-    payload = decode_access_token(access_token)
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+    user_id = session_user_id(access_token)
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()

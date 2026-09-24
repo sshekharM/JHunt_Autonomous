@@ -202,6 +202,25 @@ The `__module__ and` is a no-op truthiness guard that obscures a plain tuple
 assignment, on the code path that establishes a user's permanent identity. It
 also calls `generate_thumbprint` twice. Rewrite plainly.
 
+### R17 — TOTP verify was an OAuth bypass (fixed, CHG-003)
+`POST /api/auth/totp/verify` took `user_id` and `code` as query parameters and
+needed no prior authentication. On a valid code it marked the account
+2FA-verified and issued an eight-hour `access_token`. That turned a user id plus
+a TOTP code into a full session without the OAuth login. SEC-009 in
+`specs/reviews/security-review.md` describes it.
+
+Fixed: the OAuth callback's `totp_setup` branch now sets a signed `pending_2fa`
+cookie. It is a JWT with `purpose=totp_setup`, lives 10 minutes, and is
+`HttpOnly`, `Secure`, `SameSite=Lax`, scoped to `/api/auth/totp`. The verify
+endpoint takes only `code`, gets the user from that cookie, and returns 401 when
+the cookie is missing, expired, or has the wrong purpose. It clears the cookie
+on success. `get_current_user` now refuses any JWT that has a `purpose` claim,
+so a pending token cannot be used as a session.
+
+**Still open (product decision):** a user who has verified TOTP once is never
+asked for a code at later logins. OAuth alone gets them a session. Whether to
+require TOTP at every login has not been decided.
+
 ---
 
 ## Structural risks
