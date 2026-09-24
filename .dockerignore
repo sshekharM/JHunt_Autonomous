@@ -1,0 +1,12 @@
+# Keep secrets and local state out of `COPY . .` in the Dockerfiles.
+.env
+.env.*
+!.env.example
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.claude/state
+nginx/ssl
