@@ -221,6 +221,22 @@ so a pending token cannot be used as a session.
 asked for a code at later logins. OAuth alone gets them a session. Whether to
 require TOTP at every login has not been decided.
 
+### R18 — Notifications WebSocket had no authentication (fixed, CHG-004)
+`/api/notifications/ws/{user_id}` (`app/routers/notifications.py`) accepted
+any connection for any `user_id` and registered it. `push_to_user` then sent
+that user's real-time notifications to whoever connected. The disconnect
+handler indexed `_connections[user_id]` directly and raised `KeyError` or
+`ValueError` when the entry was already gone.
+
+Fixed: before `accept()`, the handler reads the `access_token` cookie and
+decodes it with `session_user_id`, which wraps `decode_access_token` and
+rejects purpose-bound tokens. It closes with 1008 without accepting or
+registering when the cookie is missing, invalid, or for a different user.
+Cleanup runs in `finally` and does nothing when the entry is missing. It also
+drops a user's empty entry, so the registry no longer grows forever.
+`push_to_user` now logs a failed send (`notifications.ws_push_failed`)
+instead of dropping it silently.
+
 ---
 
 ## Structural risks

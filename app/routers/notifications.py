@@ -1,40 +1,67 @@
 import asyncio
 import json
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from contextlib import suppress
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import Dict, List
+from typing import Dict, List, Optional
 from app.database import get_db, get_tenant_db
 from app.models.user import User
 from app.dependencies import get_current_user
-from app.services.auth_service import decode_access_token
+from app.services.auth_service import decode_access_token, session_user_id
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+logger = structlog.get_logger("routers.notifications")
 
 # In-memory WebSocket connection registry per user
 _connections: Dict[str, List[WebSocket]] = {}
 
 
+def _session_user(websocket: WebSocket) -> Optional[str]:
+    """User id of the handshake's access_token session cookie, or None if absent/invalid."""
+    token = websocket.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        return session_user_id(token)
+    except HTTPException:
+        return None
+
+
+def _unregister(user_id: str, websocket: WebSocket) -> None:
+    sockets = _connections.get(user_id, [])
+    if websocket in sockets:
+        sockets.remove(websocket)
+    if not sockets:
+        _connections.pop(user_id, None)
+
+
 @router.websocket("/ws/{user_id}")
 async def notification_ws(websocket: WebSocket, user_id: str):
-    """WebSocket endpoint for real-time in-app notifications."""
+    """WebSocket endpoint for real-time in-app notifications (own user only)."""
+    if _session_user(websocket) != user_id:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     await websocket.accept()
     _connections.setdefault(user_id, []).append(websocket)
     try:
-        while True:
-            await asyncio.sleep(30)
-            await websocket.send_json({"type": "ping"})
-    except WebSocketDisconnect:
-        _connections[user_id].remove(websocket)
+        with suppress(WebSocketDisconnect):  # a client going away is the normal exit
+            while True:
+                await asyncio.sleep(30)
+                await websocket.send_json({"type": "ping"})
+    finally:
+        _unregister(user_id, websocket)
 
 
 async def push_to_user(user_id: str, payload: dict) -> None:
     """Broadcast a notification to all active WebSocket connections for a user."""
-    for ws in _connections.get(user_id, []):
+    for ws in list(_connections.get(user_id, [])):
         try:
             await ws.send_json(payload)
         except Exception:
-            pass
+            # One dead socket must not stop delivery to the user's other sockets.
+            logger.warning("notifications.ws_push_failed", user_id=user_id, exc_info=True)
 
 
 @router.get("/")
