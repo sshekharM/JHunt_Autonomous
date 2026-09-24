@@ -1,0 +1,154 @@
+{
+  "gate": "security",
+  "story": "CHG-002-admin-ip-allowlist",
+  "branch": "fix/admin-ip-allowlist",
+  "range": "7c1cc13..9e364c2",
+  "date": "2026-09-24",
+  "verdict": "PASS",
+  "pass": true,
+  "block_severities": ["critical", "high"],
+  "scope": "changed files in 7c1cc13..9e364c2 plus immediate data-flow neighbours: app/main.py, app/dependencies.py, app/routers/auth.py, app/database.py, app/security/encryption.py, app/security/audit_log.py, app/compliance/dpdpa.py, app/models/**, app/tenant_models/**, nginx/nginx.conf, Dockerfile, docker-compose.windows.yml, .venv uvicorn 0.29.0 proxy_headers.py",
+  "summary": { "block": 0, "warn": 4, "info": 7 },
+  "findings": [
+    {
+      "id": "SEC-001",
+      "severity": "medium",
+      "level": "WARN",
+      "category": "proxy-trust",
+      "file": "nginx/nginx.conf",
+      "line": 67,
+      "description": "The nginx `location /ws/` block sets only Upgrade/Connection/Host and does not reset X-Forwarded-For; proxy_set_header is not inherited from the sibling /api/ location and there is no server-level default, so a client-supplied X-Forwarded-For passes through verbatim. Combined with the newly added `--proxy-headers --forwarded-allow-ips 172.28.0.10` (docker-compose.prod.yml:73), uvicorn accepts that header because the connection arrives from the trusted proxy, making request.client.host attacker-controlled on anything served under /ws/. Not BLOCK: no WebSocket route is registered in app/main.py and /api/admin/* is unreachable through the /ws/ prefix (nginx normalises the URI before location matching and Starlette does not resolve `..`), so there is no exploit path today. The diff nonetheless created the trust relationship that makes this exploitable as soon as a route is added there.",
+      "fix": "Add `proxy_set_header X-Forwarded-For $remote_addr;` (plus X-Real-IP and X-Forwarded-Proto) to the /ws/ location, and overwrite rather than append in /api/ so correctness does not depend on uvicorn's rightmost-untrusted parsing."
+    },
+    {
+      "id": "SEC-002",
+      "severity": "medium",
+      "level": "WARN",
+      "category": "insecure-configuration",
+      "file": "docker-compose.prod.yml",
+      "line": 136,
+      "description": "The new ipam block declares subnet 172.28.0.0/24 and pins nginx to 172.28.0.10 but sets no ip_range, so Docker's dynamic allocator draws from the same pool and can assign .10 to db/redis/minio/app/worker/beat or a scaled/added service before nginx's endpoint exists. Either nginx fails to start, or a non-proxy container holds the address uvicorn trusts for forwarded headers while nginx runs on another. Not BLOCK: both outcomes leave the admin allowlist denying every caller (fail closed), and a container inside the network still needs an admin session to reach /api/admin. A security-critical trust anchor should not depend on container start order.",
+      "fix": "Constrain the dynamic pool so the static address sits outside it (e.g. `ip_range: 172.28.0.128/25` beside the subnet), or place nginx and app on a dedicated network, and assert the address at deploy time."
+    },
+    {
+      "id": "SEC-003",
+      "severity": "medium",
+      "level": "WARN",
+      "category": "sensitive-data-exposure",
+      "file": "app/security/pii_policy.py",
+      "line": 46,
+      "description": "The R6 gate under-detects relative to its docstring. PII_NAME_TOKENS omits `token`, `key`, `name` (outside the full_name special case), `ssn`, `passport`, `url`, `filename`, `history`, and is not derived from the ENCRYPTED_FIELDS list in the same module, so the two halves of the policy drift (work_history_salary is declared ENCRYPTED but would not be flagged in plaintext). Plaintext personal-data columns pass today: profile.work_history and profile.education (app/tenant_models/profile.py:61-62), profile.avatar_url (line 66), master_resume.original_filename (app/tenant_models/resume.py:15). _is_protected (line 63) is name-only, so a column named *_encrypted that stores plaintext also passes.",
+      "fix": "Derive the token set from ENCRYPTED_FIELDS, add the missing tokens with a small non-PII allowlist (skill_name, field_name, schema_name), and add a complementary check that every *_encrypted column is LargeBinary and written through app.security.encryption.encrypt."
+    },
+    {
+      "id": "SEC-004",
+      "severity": "medium",
+      "level": "WARN",
+      "category": "cryptographic-storage",
+      "file": "app/security/pii_policy.py",
+      "line": 57,
+      "description": "KNOWN_VIOLATIONS accepts plaintext TOTP seeds in users.totp_secret (app/models/user.py:50) and admin_users.totp_secret (app/models/admin.py:33). Anyone with read access to the shared schema - a database backup, a SQL-injection foothold, a compromised worker container - can mint valid second-factor codes for every user and admin, defeating 2FA. Paired with SEC-009 this is a complete authentication bypass for any account whose id is known. Listing the violation is the right ratchet, but the weakness is live.",
+      "fix": "Encrypt the seed at rest with the existing Fernet helper (totp_secret_encrypted), migrate existing rows, and remove both entries from KNOWN_VIOLATIONS so the test enforces the fix. Track as a dedicated ticket rather than leaving it indefinitely 'known'."
+    },
+    {
+      "id": "SEC-005",
+      "severity": "low",
+      "level": "INFO",
+      "category": "authentication",
+      "file": "app/dependencies.py",
+      "line": 35,
+      "description": "get_current_admin requires an `admin_sub` JWT claim and no route in app/routers issues one, so there is no admin login path at all - the admin API is unreachable rather than under-protected (fail closed). The forward-looking risk is the ratchet: tests/unit/test_ip_allowlist.py:45 enumerates only routes whose path starts with /api/admin, so a future admin login route mounted under /api/auth/admin/... would escape both the allowlist and the coverage test.",
+      "fix": "Mount the eventual admin login route under /api/admin (or attach require_server_ip explicitly) and broaden the coverage test to enumerate routes by their dependency on get_current_admin/require_role rather than by path prefix."
+    },
+    {
+      "id": "SEC-006",
+      "severity": "low",
+      "level": "INFO",
+      "category": "defense-in-depth",
+      "file": "nginx/nginx.conf",
+      "line": 58,
+      "description": "A single `location /api/` block proxies the whole API tree, including /api/admin/*, from the public internet. The application-level exact-IP match is correctly implemented but is the only control on a high-value surface.",
+      "fix": "Add a dedicated `location /api/admin/ { allow <admin-ip>; deny all; proxy_pass http://api; ... }` block ahead of the generic /api/ block so the perimeter enforces the policy independently of the application."
+    },
+    {
+      "id": "SEC-007",
+      "severity": "low",
+      "level": "INFO",
+      "category": "authorization",
+      "file": "app/security/ip_allowlist.py",
+      "line": 24,
+      "description": "The allowlist is an exact string comparison with no normalisation and no CIDR support, so ::ffff:203.0.113.9 does not match 203.0.113.9 and differently-compressed IPv6 literals do not match each other. Every mismatch denies rather than admits, so the failure mode is safe and .env.example:82-83 documents it. The residual risk is operational: an admin on a dynamic or IPv6 address is pushed toward a risky workaround that .env.example now explicitly warns against.",
+      "fix": "Parse entries with ipaddress.ip_network(..., strict=False) and compare with ip_address(client) in network, which normalises IPv4-mapped forms and adds CIDR support while keeping the fail-closed default."
+    },
+    {
+      "id": "SEC-008",
+      "severity": "low",
+      "level": "INFO",
+      "category": "secrets-management",
+      "file": "Dockerfile",
+      "line": 38,
+      "description": "Pre-existing, untouched by this diff. The repository has no .dockerignore and the image is built with `COPY . .`, so a .env present in the build context - the same file docker-compose.prod.yml:56 loads - is baked into a layer of the published ${APP_IMAGE}, carrying FERNET_KEY, APP_SECRET_KEY, Postgres and MinIO credentials, every OAuth client secret and the system portal passwords. The local .venv/ is copied too. Flagged as adjacent risk because it would nullify the secret hygiene this change set documents in .env.example.",
+      "fix": "Add a .dockerignore covering .env*, .venv/, .git/, specs/, tests/, __pycache__/, and rotate any secret already shipped in an image."
+    },
+    {
+      "id": "SEC-009",
+      "severity": "low",
+      "level": "INFO",
+      "category": "authentication",
+      "file": "app/routers/auth.py",
+      "line": 126,
+      "description": "Pre-existing, untouched by this diff. POST /api/auth/totp/verify takes user_id and code as unauthenticated query parameters, sets totp_verified = True on success and issues an eight-hour access_token cookie. Rate-limited to 10/min and a valid code is still required, but the endpoint converts knowledge of a TOTP seed (see SEC-004) plus a user id into a full session, and permanently marks the account 2FA-verified.",
+      "fix": "Bind verification to the pending-login session established by the OAuth callback instead of a caller-supplied user_id, move the parameters into a request body, and use a constant-time comparison inside verify_totp."
+    },
+    {
+      "id": "SEC-010",
+      "severity": "low",
+      "level": "INFO",
+      "category": "observability",
+      "file": "docker-compose.prod.yml",
+      "line": 77,
+      "description": "Pre-existing, untouched by this diff. The app healthcheck probes http://localhost:8000/health but the registered route is /api/health (app/main.py:80), so the container is reported unhealthy permanently. This suppresses the signal an operator would rely on to notice the newly IP-restricted admin plane misbehaving.",
+      "fix": "Point the healthcheck at /api/health."
+    },
+    {
+      "id": "SEC-011",
+      "severity": "low",
+      "level": "INFO",
+      "category": "information-disclosure",
+      "file": "app/main.py",
+      "line": 72,
+      "description": "Starlette resolves trailing-slash redirects in the router, before route dependencies are solved. A non-allowlisted client requesting /api/admin/users receives 307 pointing at /api/admin/users/ instead of the intended 403, confirming the route exists. The redirected request is then correctly refused, so this is information disclosure only.",
+      "fix": "Set redirect_slashes=False on the admin routers, or register both path forms explicitly, so unlisted IPs see a uniform 403."
+    }
+  ],
+  "refuted_candidates": [
+    {
+      "candidate": "X-Forwarded-For spoofing bypasses the admin IP allowlist",
+      "refutation": "nginx appends $remote_addr last via $proxy_add_x_forwarded_for (nginx.conf:62) and pinned uvicorn 0.29.0 get_trusted_client_host (.venv/Lib/site-packages/uvicorn/middleware/proxy_headers.py:31-39) returns the rightmost entry not in trusted_hosts. trusted_hosts is the single literal 172.28.0.10; always_trust is false because nothing in the repo sets '*' (.env.example, both compose files, installer/core/env_writer.py:113). Attacker-injected entries sit to the left and are ignored. If all entries were trusted the middleware returns None and require_server_ip rejects the falsy host. The app container publishes no ports in prod, so nginx is the only external path."
+    },
+    {
+      "candidate": "Admin entry points exist outside /api/admin",
+      "refutation": "app/main.py:72-77 registers exactly six admin routers, all prefixed /api/admin and all carrying dependencies=[Depends(require_server_ip)]; every endpoint in them also carries require_role. No non-admin router references AdminRole, require_role or get_current_admin."
+    },
+    {
+      "candidate": "The IP check runs after authentication, so auth errors leak first",
+      "refutation": "Router-level dependencies are solved before endpoint dependencies, so require_server_ip raises 403 before get_current_admin reads a cookie. Asserted against the real ASGI app in tests/unit/test_ip_allowlist.py:69-73 in a suite that passes (454 passed)."
+    },
+    {
+      "candidate": "Empty or whitespace ALLOWED_IPS fails open",
+      "refutation": "app/config.py:93 drops blank entries so '', '   ' and ' , ,' all yield []; app/security/ip_allowlist.py:24 denies on an empty list or a falsy client host. Covered by parametrised tests at test_ip_allowlist.py:97-115."
+    },
+    {
+      "candidate": "APP_ENV is not fail-safe",
+      "refutation": "app_env is Literal['development','production'] defaulting to 'production'; any other value raises ValidationError while app/config.py is imported, so the process refuses to start rather than degrading. is_production gates OpenAPI docs and the https_only session cookie (app/main.py:42-53). docker-compose.prod.yml:63 pins APP_ENV in environment:, which takes precedence over env_file, so a stale .env copied from .env.example cannot downgrade a production stack."
+    },
+    {
+      "candidate": "The consent.granted audit event leaks PII",
+      "refutation": "app/compliance/consent_store.py:45-50 logs only consent_version, two booleans and llm_choice, keyed by the pseudonymous user_id UUID. ip_address and user_agent stay parameters of record_consent and are written only to the consent_records row, matching R11."
+    },
+    {
+      "candidate": "The onboarding refactor opens tenant schema-name injection",
+      "refutation": "The R16 change is behaviour-preserving (the old `__module__ and (...)` trick evaluated to the same pair). schema_name is u_<sha256 hex[:32]> and every SQL interpolation passes validate_schema_name, which fullmatches u_[0-9a-f]{32} (app/database.py:11-18, 80, 87, 104-106)."
+    }
+  ]
+}

@@ -1,167 +1,136 @@
 {
   "gate": "code-review",
+  "verdict": "PASS",
   "pass": true,
-  "range": "working tree (uncommitted) on fix/admin-ip-allowlist",
-  "policy": "union",
-  "summary": {
-    "block": 0,
-    "warn": 3,
-    "info": 11
+  "range": "7c1cc13..9e364c2",
+  "branch": "fix/admin-ip-allowlist",
+  "summary": { "block": 0, "warn": 4, "info": 6 },
+  "verification": {
+    "tests_run": ".venv/Scripts/python.exe -m pytest -q tests/ -> exit 0, 454 passed, 10 skipped (run with APP_ENV unset, i.e. the new production default)",
+    "targeted_run": "tests/unit/{test_ip_allowlist,test_config,test_pii_policy,test_consent_store,test_onboarding,test_admin_config_ops}.py -> 80 passed",
+    "pii_heuristic_executed": "unprotected_pii_columns over all mapped columns -> flags exactly {(users,totp_secret),(admin_users,totp_secret)}",
+    "lint_types": "ruff/mypy not installed in .venv - NOT RUN"
   },
   "findings": [
     {
-      "id": "CRA-001",
-      "level": "WARN",
-      "severity": "WARN",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 42,
-      "message": "The AC1 test asserts on FastAPI dependency-injection internals (route.dependant.dependencies, via the recursive _depends_on helper) rather than on observable behaviour. It proves the wiring exists, not that a disallowed caller is actually refused on each admin route; only /api/admin/ops/dashboard is exercised behaviourally. It is also the least stakeholder-readable test in the file ('depends on require_server_ip' is a code detail, not a requirement).",
-      "fix": "Keep the route enumeration, but assert behaviour: parametrize over the (method, path) pairs of every /api/admin APIRoute, call each with the default TestClient host absent from ALLOWED_IPS, and assert 403. Rename to test_every_admin_endpoint_refuses_an_unlisted_ip. (TestClient in starlette/fastapi 0.111 does not accept a client= kwarg, so keep using the 'testclient' host constant.)"
-    },
-    {
-      "id": "CRA-002",
+      "id": "CR-001",
       "level": "WARN",
       "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/security/ip_allowlist.py",
-      "line": 24,
-      "message": "Exact string matching plus the shipped default ALLOWED_IPS=127.0.0.1 silently locks out local operators on a dual-stack bind: uvicorn reports '::1' or '::ffff:127.0.0.1' for loopback when listening on '::', and neither string equals '127.0.0.1'. Fail-closed is intended, but this specific form is a foreseeable false denial that the .env.example caveat (which covers only the Docker bridge and nginx cases) does not mention, and no test covers an IPv6 host.",
-      "fix": "Add one line to the .env.example Security block naming the IPv6 loopback forms ('::1', '::ffff:127.0.0.1') and advising listing them alongside 127.0.0.1; optionally add a test asserting an IPv6 host is denied unless listed. Do not add CIDR/normalisation logic - that is explicitly out of scope for CHG-002."
+      "file": "app/security/pii_policy.py",
+      "line": 46,
+      "description": "consent_records.user_agent is stored plaintext but is neither flagged by _looks_like_pii nor recorded in PLAINTEXT_EXCEPTIONS, while ip_address in the same table is an explicit reviewed exception. The consent-audit comment added in the same range ('IP and user agent stay in the consent record only, not the log stream') treats the two as equally sensitive, so the R6 policy silently covers only half of the network identifiers it claims to govern.",
+      "message": "consent_records.user_agent escapes the PII policy while the sibling ip_address needs a reviewed exception.",
+      "fix": "Add \"agent\" to PII_NAME_TOKENS and ('consent_records', 'user_agent') to PLAINTEXT_EXCEPTIONS with the same DPDPA-evidence rationale."
     },
     {
-      "id": "CRA-003",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/routers/admin/ops.py",
-      "line": 13,
-      "message": "dependencies=[Depends(require_server_ip)] is repeated verbatim in all six admin routers, so a seventh admin router can be added without it. The AC1 test is the only thing that catches that omission.",
-      "fix": "Optional: pass the dependency once at include time in app/main.py, or mount the six routers under a single parent APIRouter that carries the dependency. Acceptable as-is because the route-enumeration test fails closed on a forgotten router."
-    },
-    {
-      "id": "CRA-004",
-      "level": "INFO",
-      "severity": "INFO",
+      "id": "CR-002",
+      "level": "WARN",
+      "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/main.py",
-      "line": 57,
-      "message": "CORSMiddleware answers OPTIONS preflight for /api/admin/* before routing, so preflight responses are returned to any IP without the allowlist check. This leaks only route existence, no admin data, and matches how FastAPI middleware/dependency ordering works.",
-      "fix": "No change required for CHG-002; note it if the story ever grows a 'no admin surface visible off-allowlist' criterion."
+      "file": "app/security/pii_policy.py",
+      "line": 45,
+      "description": "PII_NAME_TOKENS omits the secret-shaped tokens most likely to appear next in this codebase ('token', 'otp', 'ssn', 'passport'), and 'dob' only matches as a standalone underscore token so 'date_of_birth' is missed. A future plaintext column such as telegram_bot_token, refresh_token, or date_of_birth would pass test_no_model_column_stores_pii_in_plaintext, which is the whole enforcement mechanism for R6. No such column exists today (verified by running the heuristic over every mapped column), so this is a coverage gap, not a live defect.",
+      "message": "PII token list misses token/otp/ssn/passport and date_of_birth, so those columns would pass the R6 gate in plaintext.",
+      "fix": "Add \"token\", \"otp\", \"ssn\", \"passport\", \"birth\" to PII_NAME_TOKENS. Do not add \"key\": it would false-positive on the existing master_resume.minio_key / tailored_resumes.minio_key columns."
     },
     {
-      "id": "CRA-005",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": ".env.example",
-      "line": 73,
-      "message": "The comment says the check is 'checked before admin login/role checks', but no route in app/routers/ issues an admin token (payload key admin_sub is only ever read, in app/dependencies.py:42). The role-check half of the sentence is accurate; the login half describes an endpoint that does not exist yet. Pre-existing gap, surfaced by the new wording.",
-      "fix": "Reword to 'checked before admin authentication and role checks', or leave until an admin login route lands."
-    },
-    {
-      "id": "CRA-006",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 20,
-      "message": "_request(host) and _depends_on(dependant, target) have unannotated parameters, against the project's 'static typing everywhere' rule. Low impact: mypy is scoped to app/ in CLAUDE.md, and the context pack records that ruff/mypy could not be run in this environment.",
-      "fix": "Annotate: def _request(host: str | None) -> SimpleNamespace and def _depends_on(dependant: Dependant, target: Callable[..., object]) -> bool."
-    },
-    {
-      "id": "CRA-007",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "specs/reviews/review-context-pack.md",
-      "line": 27,
-      "message": "ruff and mypy were not run for this change (not installed, no network). The diff is small and hand-checked, but the lint/type sensors this project relies on did not execute.",
-      "fix": "Run ruff check . and mypy app/ before merge once the environment allows."
-    },
-    {
-      "id": "CRB-001",
+      "id": "CR-003",
       "level": "WARN",
       "severity": "WARN",
       "confidence": "high",
+      "axis": "maintainability",
+      "file": "docker-compose.prod.yml",
+      "line": 75,
+      "description": "172.28.0.10 is the trust anchor for the whole admin allowlist and is hardcoded in two independent places (the app's --forwarded-allow-ips at :75 and nginx's ipv4_address at :134), plus a third copy in .env.example prose. Nothing validates that they agree (CI only runs nginx -t; there is no `docker compose config` check). If the subnet or the nginx address drifts, uvicorn stops trusting nginx, every admin request is evaluated against nginx's container IP, and admin is either fully locked out or 'fixed' by adding the proxy IP to ALLOWED_IPS - the exact failure mode .env.example warns is internet-wide exposure.",
+      "message": "The nginx trust IP is a magic constant duplicated across two compose keys with no check that they agree.",
+      "fix": "Declare it once (e.g. NGINX_IP=172.28.0.10 in .env) and interpolate ${NGINX_IP:-172.28.0.10} into both the nginx ipv4_address and the app's --forwarded-allow-ips."
+    },
+    {
+      "id": "CR-004",
+      "level": "WARN",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "docker-compose.yml",
+      "line": 68,
+      "description": "APP_ENV: ${APP_ENV:-development} fails open. A compose `environment:` entry takes precedence over `env_file: .env`, so when interpolation cannot resolve APP_ENV (non-default --env-file, an explicit --project-directory, or a missing .env) the container runs as development regardless of APP_ENV=production inside the env file - re-enabling /api/docs and non-https session cookies, the precise posture R9 removed. This is on a production path: installer/core/autostart.py:49 deploys real installations with docker-compose.yml, and installer/core/env_writer.py:55 relies on APP_ENV=production being honoured. The default paths (systemd WorkingDirectory=install_dir; the Windows task's `cd /d install_dir`) do resolve correctly today, which is why this is a WARN rather than a BLOCK.",
+      "message": "Compose fallback ${APP_ENV:-development} can silently override a production env_file value on the installer's deployment path.",
+      "fix": "Use ${APP_ENV:-production}. Local dev still resolves to development because init.sh copies .env.example (APP_ENV=development) to .env, which compose interpolates."
+    },
+    {
+      "id": "CR-005",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
       "axis": "behaviour",
       "file": "docker-compose.prod.yml",
-      "line": 71,
-      "message": "Prod uvicorn runs behind nginx with no --forwarded-allow-ips, so request.client.host is the nginx container's bridge IP, which is dynamic. After this change every /api/admin route returns 403 in the documented prod topology and there is no static value an operator can put in ALLOWED_IPS to fix it (the exact-match list cannot track a rotating container IP). Fail-closed is the right direction and the story scopes proxy handling out, so this is not a block, but it ships an unreachable admin surface.",
-      "fix": "Open a follow-up story to set FORWARDED_ALLOW_IPS/--forwarded-allow-ips to the nginx service address and resolve the client IP from X-Forwarded-For, or give nginx a fixed address on the compose network; until then add the lockout to the deploy runbook."
+      "line": 134,
+      "description": "Docker's IPAM allocates dynamic addresses sequentially from 172.28.0.2 and does not pre-reserve statically configured addresses. With the six dynamically addressed services today the pool tops out around .7, so .10 is safe; adding three more services (or scaling one) can hand .10 to another container first, after which nginx fails to start with 'Address already in use'. nginx starts last (depends_on: app), which maximises the exposure.",
+      "message": "Static ipv4_address 172.28.0.10 sits inside the dynamic allocation pool.",
+      "fix": "Reserve the dynamic pool away from the static address: add `ip_range: 172.28.0.0/25` under the ipam config and move nginx to 172.28.0.130 (or keep .10 and set ip_range to 172.28.0.128/25)."
     },
     {
-      "id": "CRB-003",
+      "id": "CR-006",
       "level": "INFO",
       "severity": "INFO",
       "confidence": "high",
       "axis": "maintainability",
       "file": "app/routers/admin/config.py",
       "line": 9,
-      "message": "dependencies=[Depends(require_server_ip)] is duplicated across all six admin routers; a future admin router that forgets the line is a silent security gap. The AC1 route-scan test mitigates this, so it is an observation, not a defect.",
-      "fix": "Optional: mount the six routers under one parent APIRouter(prefix=\"/api/admin\", dependencies=[Depends(require_server_ip)]) in app/main.py so the control is declared once."
+      "description": "The same four-line guarded-router construction is repeated across all six admin routers; a seventh admin router can silently omit the dependency. The risk is contained because tests/unit/test_ip_allowlist.py:43 enumerates the app's actual routes and fails on any unguarded /api/admin path, so this is style, not exposure.",
+      "message": "Router-level allowlist dependency duplicated in six files.",
+      "fix": "Optional: pass dependencies=[Depends(require_server_ip)] once at each app.include_router(admin_*) call in app/main.py instead of in each router module."
     },
     {
-      "id": "CRB-004",
+      "id": "CR-007",
       "level": "INFO",
       "severity": "INFO",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 59,
-      "message": "The AC3 test asserts only status_code == 401 and would still pass if require_server_ip were deleted entirely (the route 401s either way), so it is not by itself a regression detector for the pass-through path. AC1/AC2 tests do cover the regression.",
-      "fix": "Add assert response.json()[\"detail\"] == \"Not authenticated.\" so the test pins that the 401 comes from admin authentication rather than any other guard."
+      "file": "app/security/ip_allowlist.py",
+      "line": 24,
+      "description": "A denied admin request raises 403 without emitting an audit event, so an IP scan of /api/admin leaves no trace in the log stream while successful admin actions are audited. Listed as a deferred follow-up in specs/stories/CHG-002-admin-ip-allowlist.md, so it is recorded, not re-litigated.",
+      "message": "Denied admin attempts are not audited.",
+      "fix": "Call audit(\"admin.ip_denied\", details={\"client_ip\": client_ip}) immediately before raising the HTTPException."
     },
     {
-      "id": "CRB-005",
+      "id": "CR-008",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/unit/test_config.py",
+      "line": 28,
+      "description": "test_unrecognised_app_env_is_rejected asserts only that some ValidationError is raised; it would pass for the wrong reason if any other required setting were missing. It is non-vacuous today because the root conftest.py seeds APP_SECRET_KEY / POSTGRES_PASSWORD / MINIO_SECRET_KEY / FERNET_KEY, but the assertion does not pin that.",
+      "message": "Rejection test does not assert which field failed validation.",
+      "fix": "Use pytest.raises(ValidationError, match=\"app_env\") so the test can only pass for the Literal constraint."
+    },
+    {
+      "id": "CR-009",
       "level": "INFO",
       "severity": "INFO",
       "confidence": "medium",
       "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 31,
-      "message": "The module-local `client` fixture shadows the DB-backed async `client` fixture in tests/conftest.py with a different type (sync TestClient). Correct and deliberate here (it keeps the tests hermetic), but a later test added to this file would silently get the local one.",
-      "fix": "Rename to `api_client` or add a one-line comment stating the shadowing is intentional."
+      "file": "tests/unit/test_onboarding.py",
+      "line": 169,
+      "description": "assert len(wired.tenant.executed) == 2 pins the number of SQL statements the handler issues rather than an observable outcome, so a behaviour-preserving refactor that merges two statements would fail it. Acceptable as deliberate characterization pinning ahead of the R15/R16 extraction work, but it should not outlive that refactor.",
+      "message": "Characterization test asserts internal statement count.",
+      "fix": "Replace with an assertion on the resulting profile state once the onboarding extraction lands."
     },
     {
-      "id": "CRB-006",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 65,
-      "message": "test_listed_ip_passes_the_check carries no # ACn tag while every other test in the file does; it belongs to AC3.",
-      "fix": "Add the # AC3 tag for consistency."
-    },
-    {
-      "id": "CRB-008",
+      "id": "CR-010",
       "level": "INFO",
       "severity": "INFO",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 44,
-      "message": "The AC1 route scan matches on path.startswith(\"/api/admin\"), so a future admin router mounted under a different prefix would not be caught. Consistent with the story's wording, noted only so the limit is explicit.",
-      "fix": "None required."
-    },
-    {
-      "id": "CRB-009",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "specs/brownfield/risk-map.md",
-      "line": 69,
-      "message": "R5 still reads 'Neither is imported anywhere', which this diff makes false.",
-      "fix": "Close or annotate R5 with the CHG-002 reference when the change merges."
+      "file": "app/routers/onboarding.py",
+      "line": 147,
+      "description": "Assessment of the registry perf-smell BLOCK (5x PERF-N1-LOOP-QUERY at 147/169/259/277/306): false positive. get_tenant_db (app/database.py:90-96) is a single-yield async generator, so `async for tenant_db in get_tenant_db(schema)` runs exactly one iteration - it is the dependency-generator-as-context-manager idiom, not a per-row query loop. Exhausting the generator also runs its finally, so the session is closed; there is no leak. All five lines are pre-existing and untouched by this range (the diff changed only lines 94-100).",
+      "message": "perf-smell PERF-N1-LOOP-QUERY findings on onboarding.py are false positives on pre-existing lines.",
+      "fix": "No code change. Suppress or teach the perf sensor to ignore `async for x in <single-yield dependency generator>`."
     }
   ]
 }

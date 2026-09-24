@@ -1,0 +1,74 @@
+{
+  "gate": "observability",
+  "pass": true,
+  "checked": 11,
+  "summary": {
+    "block": 0,
+    "warn": 9
+  },
+  "findings": [
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/config.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/admin/config.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/admin/crawls.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/admin/ops.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/admin/portals.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/admin/taxonomy.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/admin/users.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/routers/onboarding.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    },
+    {
+      "id": "OBS-BOUNDARY-NO-LOGGER",
+      "level": "WARN",
+      "file": "app/security/ip_allowlist.py",
+      "line": 1,
+      "message": "Likely service boundary without structured logger usage"
+    }
+  ]
+}

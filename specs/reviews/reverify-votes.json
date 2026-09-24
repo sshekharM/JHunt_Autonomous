@@ -1,0 +1,9 @@
+{
+  "gate": "gate-reverify",
+  "trigger": "security-boundary",
+  "range": "7c1cc13..9e364c2",
+  "security": { "votes": ["pass", "pass", "pass"], "majority": "pass", "fail_safe_triggered": false },
+  "functional": { "votes": ["pass", "pass", "pass"], "majority": "pass", "fail_safe_triggered": false },
+  "notes": "Functional evaluation in test-backed static mode (no Docker). Prod forwarded-allow-ips marked UNVERIFIED-runtime by canonical evaluator.",
+  "timestamp": "2026-09-24T00:00:00Z"
+}
