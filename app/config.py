@@ -1,13 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
-from typing import List
+from typing import List, Literal
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Application
-    app_env: str = "development"
+    # Secure by default: development (docs, non-https cookies) is an explicit opt-in.
+    app_env: Literal["development", "production"] = "production"
     app_secret_key: str
     app_base_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:5173"
