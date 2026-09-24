@@ -68,7 +68,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    # Trust X-Forwarded-For only from nginx's fixed address (below), so
+    # ALLOWED_IPS sees the real client IP and it cannot be spoofed.
+    command: >-
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+      --proxy-headers --forwarded-allow-ips 172.28.0.10
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -125,6 +129,15 @@ services:
     depends_on:
       - app
     restart: always
+    networks:
+      default:
+        ipv4_address: 172.28.0.10  # referenced by the app's --forwarded-allow-ips
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
 
 volumes:
   postgres_data:
