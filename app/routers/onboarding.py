@@ -94,10 +94,8 @@ async def step1_personal(
     # Derive thumbprint from email + phone
     from app.security.encryption import decrypt
     email = decrypt(user.email_encrypted)
-    thumbprint, schema_name = schema_name_from_thumbprint.__module__ and (
-        generate_thumbprint(email, data.phone),
-        schema_name_from_thumbprint(generate_thumbprint(email, data.phone)),
-    )
+    thumbprint = generate_thumbprint(email, data.phone)
+    schema_name = schema_name_from_thumbprint(thumbprint)
 
     # Check thumbprint uniqueness
     existing = await db.execute(select(User).where(User.thumbprint == thumbprint, User.id != user.id))
