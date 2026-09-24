@@ -5,9 +5,13 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.admin import AdminRole
 from app.dependencies import require_role
+from app.security.ip_allowlist import require_server_ip
 from app.security.audit_log import audit
 
-router = APIRouter(prefix="/api/admin/taxonomy", tags=["admin-taxonomy"])
+router = APIRouter(
+    prefix="/api/admin/taxonomy", tags=["admin-taxonomy"],
+    dependencies=[Depends(require_server_ip)],
+)
 
 
 class SkillReviewAction(BaseModel):

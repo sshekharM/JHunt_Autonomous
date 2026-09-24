@@ -5,9 +5,13 @@ from app.database import get_db
 from app.models.portal_account import SystemPortalAccount, PortalAccountHealth
 from app.models.admin import AdminRole
 from app.dependencies import require_role
+from app.security.ip_allowlist import require_server_ip
 from app.security.audit_log import audit
 
-router = APIRouter(prefix="/api/admin/portals", tags=["admin-portals"])
+router = APIRouter(
+    prefix="/api/admin/portals", tags=["admin-portals"],
+    dependencies=[Depends(require_server_ip)],
+)
 
 
 @router.get("/")

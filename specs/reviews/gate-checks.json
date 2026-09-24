@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "summary": {
+    "pass": true,
+    "passed": 1,
+    "blocked": 0,
+    "warn": 0,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "id": "local-regression",
+      "pack": "verification",
+      "blocking": true,
+      "status": "passed",
+      "detail": ""
+    }
+  ]
+}

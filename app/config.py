@@ -88,7 +88,8 @@ class Settings(BaseSettings):
 
     @property
     def allowed_ip_list(self) -> List[str]:
-        return [ip.strip() for ip in self.allowed_ips.split(",")]
+        """Exact-match admin IP allowlist; blank entries dropped. Empty = deny all."""
+        return [ip.strip() for ip in self.allowed_ips.split(",") if ip.strip()]
 
     # Retention
     resume_retention_days: int = 0  # 0 = disabled

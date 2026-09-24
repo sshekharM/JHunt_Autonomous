@@ -1,29 +1,27 @@
-# Review context pack — CHG-001 unified crawler registry
+# Review context pack — CHG-002 admin IP allowlist (risk R5)
 
-Story: `specs/stories/CHG-001-unified-crawler-registry.md` (AC1–AC5).
+Story: `specs/stories/CHG-002-admin-ip-allowlist.md` (AC1–AC5).
+Risk entry: `specs/brownfield/risk-map.md` R5.
+Branch: `fix/admin-ip-allowlist`. Review mode: **adversarial** (security boundary + 9 files).
 
-## Problem
-Beat crawls 6 portals via `crawl_jobs._CRAWLER_MAP`; the apply path
-(`application_service._crawler_for_portal`, also used by
-`tasks/status_check.py:98`) had its own 4-portal map, so applying to /
-status-checking Monster and Shine jobs raised `ValueError`.
+## Changed files
+- `app/security/ip_allowlist.py`: `require_server_ip` now fails closed. It denies when the request has no client address or the IP is not listed, and the docstring states the empty-list and proxy behaviour.
+- `app/config.py`: `allowed_ip_list` drops blank entries, so empty `ALLOWED_IPS` becomes `[]` (deny all) instead of `[""]`.
+- `app/routers/admin/{config,crawls,ops,portals,taxonomy,users}.py`: `APIRouter(..., dependencies=[Depends(require_server_ip)])`.
+- `.env.example`: `ALLOWED_IPS` is documented (exact match, empty = fail closed, Docker/nginx client-IP caveat).
+- `tests/unit/test_ip_allowlist.py`: new acceptance/unit tests.
 
-## Changed files (uncommitted working tree)
-- NEW `app/crawlers/registry.py` — `_REGISTRY`, `SUPPORTED_PORTALS`,
-  `is_supported`, `crawler_class_for`, `crawler_for` (lazy importlib).
-- `app/services/application_service.py` — `_crawler_for_portal` delegates to
-  `registry.crawler_for` (name kept for status_check caller).
-- `app/tasks/crawl_jobs.py` — `_CRAWLER_MAP` / `_import_crawler` removed;
-  `is_known_portal()` added; crawl uses `crawler_class_for`.
-- NEW `tests/unit/test_registry.py`, `tests/unit/test_crawl_jobs.py`.
-- Out of review scope: `.claude/hooks/lib/tdd.js` (user-applied harness change).
+## Bug fixed in passing (AC5)
+Before this change, empty `ALLOWED_IPS` gave `[""]`, and `request.client is None` gave `client_ip = ""`. That request matched and was allowed.
 
-## Review mode
-`review-tier.js` → standard (one code-reviewer). No security boundary crossed
-(no auth, routes, persistence, input handling changes).
+## Known deployment consequence (documented, out of scope)
+`docker-compose.prod.yml` runs uvicorn behind nginx without `--forwarded-allow-ips`. So `request.client.host` is the nginx container IP, and with the default `ALLOWED_IPS=127.0.0.1` all admin access in prod is blocked (403) until operators configure it. This is fail-closed by design.
 
-## Verification (passed)
-- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider` → 257 passed.
-- `uvx ruff check` on new files → clean; touched modules 15 → 14 pre-existing findings.
-- `uvx mypy` on touched modules → 6 pre-existing `union-attr` errors in
-  `apply_to_job` (`job_record: Optional[object]`), untouched by this diff.
+## Acceptance-test readability
+Reviewers: judge whether `tests/unit/test_ip_allowlist.py` reads as the requirement (module docstring gives Given/When/Then; each test is tagged with its AC).
+
+## Commands that passed
+- `.venv/Scripts/python.exe -m pytest -q tests/unit/test_ip_allowlist.py`: 12 passed (8 were red before the fix)
+- `.venv/Scripts/python.exe -m pytest -q`: 386 passed, 10 skipped
+- `node .claude/scripts/run-gate-checks.js --only local-regression`: ok
+- ruff / mypy: **not run**. They are not installed in `.venv` and the network is unavailable.

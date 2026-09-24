@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "mode": "adversarial",
+  "policy": "union",
+  "instances": [
+    {
+      "id": "a",
+      "verdict_path": "specs/reviews/code-review-verdict-a.json",
+      "pass": true,
+      "error": null
+    },
+    {
+      "id": "b",
+      "verdict_path": "specs/reviews/code-review-verdict-b.json",
+      "pass": true,
+      "error": null
+    }
+  ],
+  "merged_pass": true,
+  "merged_summary": {
+    "block": 0,
+    "warn": 3,
+    "info": 11
+  },
+  "timeouts": []
+}

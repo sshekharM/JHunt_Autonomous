@@ -1,0 +1,125 @@
+{
+  "gate": "code-review",
+  "reviewer": "instance-B",
+  "story": "CHG-002-admin-ip-allowlist",
+  "range": "working-tree (uncommitted) on fix/admin-ip-allowlist",
+  "verdict": "PASS",
+  "pass": true,
+  "summary": { "block": 0, "warn": 2, "info": 7 },
+  "verification_run": [
+    ".venv/Scripts/python.exe -m pytest -q tests/unit/test_ip_allowlist.py -> 12 passed",
+    "in-process probe: all 11 /api/admin APIRoutes have require_server_ip as dependant.dependencies[0]; GET/POST probes from a disallowed host return 403 before auth and before path/param handling"
+  ],
+  "ac_assessment": {
+    "AC1": "met - router-level dependency on all 6 admin routers; probe confirms 11/11 admin routes, none unguarded",
+    "AC2": "met - 403 (not 401) for an unauthenticated caller from an unlisted IP; IP check resolves first in the dependant tree",
+    "AC3": "met - listed IP falls through to get_current_admin (401)",
+    "AC4": "met - whitespace stripped, blank entries dropped",
+    "AC5": "met - empty/all-blank list denies all; missing client address denied; documented in docstring and .env.example"
+  },
+  "findings": [
+    {
+      "id": "CRB-001",
+      "level": "WARN",
+      "severity": "WARN",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "docker-compose.prod.yml",
+      "line": 71,
+      "message": "Prod uvicorn runs behind nginx with no --forwarded-allow-ips, so request.client.host is the nginx container's bridge IP, which is dynamic. After this change every /api/admin route returns 403 in the documented prod topology and there is no static value an operator can put in ALLOWED_IPS to fix it (the exact-match list cannot track a rotating container IP). Fail-closed is the right direction and the story scopes proxy handling out, so this is not a block, but it ships an unreachable admin surface.",
+      "fix": "Open a follow-up story to set FORWARDED_ALLOW_IPS/--forwarded-allow-ips to the nginx service address and resolve the client IP from X-Forwarded-For, or give nginx a fixed address on the compose network; until then add the lockout to the deploy runbook."
+    },
+    {
+      "id": "CRB-002",
+      "level": "WARN",
+      "severity": "WARN",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/security/ip_allowlist.py",
+      "line": 24,
+      "message": "A denied admin request raises 403 without an audit entry, although app/security/audit_log.py exists and every admin mutation in the touched routers already calls audit(). Blocked admin access attempts from unlisted IPs leave no trace, which is the signal an IP allowlist is most useful for.",
+      "fix": "Call the existing audit helper (or a logger.warning with the rejected IP and path) on the deny branch before raising."
+    },
+    {
+      "id": "CRB-003",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/routers/admin/config.py",
+      "line": 9,
+      "message": "dependencies=[Depends(require_server_ip)] is duplicated across all six admin routers; a future admin router that forgets the line is a silent security gap. The AC1 route-scan test mitigates this, so it is an observation, not a defect.",
+      "fix": "Optional: mount the six routers under one parent APIRouter(prefix=\"/api/admin\", dependencies=[Depends(require_server_ip)]) in app/main.py so the control is declared once."
+    },
+    {
+      "id": "CRB-004",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "tests/unit/test_ip_allowlist.py",
+      "line": 59,
+      "message": "The AC3 test asserts only status_code == 401 and would still pass if require_server_ip were deleted entirely (the route 401s either way), so it is not by itself a regression detector for the pass-through path. AC1/AC2 tests do cover the regression.",
+      "fix": "Add assert response.json()[\"detail\"] == \"Not authenticated.\" so the test pins that the 401 comes from admin authentication rather than any other guard."
+    },
+    {
+      "id": "CRB-005",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "tests/unit/test_ip_allowlist.py",
+      "line": 31,
+      "message": "The module-local `client` fixture shadows the DB-backed async `client` fixture in tests/conftest.py with a different type (sync TestClient). Correct and deliberate here (it keeps the tests hermetic), but a later test added to this file would silently get the local one.",
+      "fix": "Rename to `api_client` or add a one-line comment stating the shadowing is intentional."
+    },
+    {
+      "id": "CRB-006",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/unit/test_ip_allowlist.py",
+      "line": 65,
+      "message": "test_listed_ip_passes_the_check carries no # ACn tag while every other test in the file does; it belongs to AC3.",
+      "fix": "Add the # AC3 tag for consistency."
+    },
+    {
+      "id": "CRB-007",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": ".env.example",
+      "line": 73,
+      "message": "Exact string matching means an IPv6-connected client reports ::1 or ::ffff:127.0.0.1 and never matches the default ALLOWED_IPS=127.0.0.1. This fails closed (safe) but is the same class of operator surprise as the Docker/nginx caveat already documented.",
+      "fix": "Add one line to the ALLOWED_IPS comment: list the IPv6 form too when the server binds ::."
+    },
+    {
+      "id": "CRB-008",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "tests/unit/test_ip_allowlist.py",
+      "line": 44,
+      "message": "The AC1 route scan matches on path.startswith(\"/api/admin\"), so a future admin router mounted under a different prefix would not be caught. Consistent with the story's wording, noted only so the limit is explicit.",
+      "fix": "None required."
+    },
+    {
+      "id": "CRB-009",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "specs/brownfield/risk-map.md",
+      "line": 69,
+      "message": "R5 still reads 'Neither is imported anywhere', which this diff makes false.",
+      "fix": "Close or annotate R5 with the CHG-002 reference when the change merges."
+    }
+  ],
+  "acceptance_test_readability": {
+    "rating": "good",
+    "notes": "The module docstring states the requirement in Given/When/Then plain English, test names are sentences a stakeholder can read (from_unlisted_ip_is_forbidden_before_auth, empty_allowlist_denies_every_request), and each test carries its AC tag. Two small readability nits: allowlisting the literal string 'testclient' as an 'IP' (line 60) reads oddly to a non-technical reader even with the named constant, and the AC1 assertion `assert unguarded == []` has no human-readable message explaining what an unguarded route means."
+  }
+}
