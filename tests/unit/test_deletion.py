@@ -54,3 +54,13 @@ async def test_anonymise_drops_pii_tables_in_validated_schema():
     statements = [str(c.args[0]) for c in db.execute.call_args_list]
     assert f'DROP TABLE IF EXISTS "{VALID}"."profile" CASCADE' in statements
     assert len(statements) == 4
+
+
+@pytest.mark.asyncio
+async def test_anonymise_blanks_pii_on_the_user_row():
+    from app.compliance import deletion
+    user = _user(VALID)
+    with patch.object(deletion, "audit"):
+        await deletion.execute_deletion(user, deletion.DeletionMode.anonymise, _db())
+    assert user.email_encrypted == b"" and user.totp_secret_encrypted == b"" and user.oauth_sub == ""
+    assert user.email_hash == "anonymised_user-1" and user.is_active is False

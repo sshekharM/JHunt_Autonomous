@@ -87,6 +87,11 @@ each author remembering.
 Fix: assert the policy in a test that reflects over `app/models/` and
 `app/tenant_models/` columns, so adding an unencrypted PII field fails CI.
 
+Update (CHG-005): the last two known violations are fixed. The TOTP seed now
+lives in `users.totp_secret_encrypted` and `admin_users.totp_secret_encrypted`
+(Fernet; migration 0004 encrypts existing rows). `KNOWN_VIOLATIONS` is empty,
+which closes SEC-004.
+
 ### R7 — Tenant schema name is interpolated into SQL
 `app/database.py:37` — `SET search_path TO "{schema_name}", public`; `:47` —
 `CREATE SCHEMA IF NOT EXISTS "{schema_name}"`.
@@ -155,6 +160,17 @@ Act, consent capture is the legally load-bearing part.
 Fix: cover `record_consent` and assert an audit entry is written for each
 consent grant and withdrawal.
 
+Status (2026-09-25): grant covered by `tests/unit/test_consent_store.py`.
+Withdrawal added by CHG-007: `withdraw_consent` appends a `event='withdrawn'`
+row (migration 0006; old rows never updated), audits `consent.withdrawn`
+with scopes only, and is exposed at `GET /api/consent` and
+`POST /api/consent/withdraw`. `apply_matched_jobs` checks current consent
+(fail closed) before touching tenant data and before LLM tailoring.
+Remaining: no re-grant flow; `screening_service` LLM call is ungated (no
+caller yet); withdrawing `data_processing` relies on the soft delete in
+`deletion.py`, which never writes `scheduled_deletion_at` and has no purge
+job (see R12 — needs human approval to fix).
+
 ---
 
 ## MEDIUM — data / operations
@@ -217,9 +233,19 @@ the cookie is missing, expired, or has the wrong purpose. It clears the cookie
 on success. `get_current_user` now refuses any JWT that has a `purpose` claim,
 so a pending token cannot be used as a session.
 
-**Still open (product decision):** a user who has verified TOTP once is never
-asked for a code at later logins. OAuth alone gets them a session. Whether to
-require TOTP at every login has not been decided.
+Follow-ups: the code now goes in the request body, not the URL. CHG-006 adds
+a per-account lockout: after `totp_max_failures` (5) bad codes in a row, TOTP
+verify for that account returns 429 for `totp_lockout_minutes` (15) and writes
+`auth.totp_locked`. A time step that was already accepted is refused as a
+replay. The replay check is defence in depth for now: a successful verify also
+sets `totp_verified`, after which the pending token is refused, so it only
+starts to matter if TOTP is ever checked again after enrolment. The user row is read `FOR UPDATE`, so parallel attempts cannot get
+past the count. The counters are on `users` (migration 0005).
+
+**Decided (2026-09-25, user):** returning users are **not** asked for a TOTP
+code at login. A user who has verified TOTP once gets a session from OAuth
+alone, so TOTP protects enrolment only. This is accepted residual risk: a
+compromised OAuth account is enough to sign in.
 
 ### R18 — Notifications WebSocket had no authentication (fixed, CHG-004)
 `/api/notifications/ws/{user_id}` (`app/routers/notifications.py`) accepted

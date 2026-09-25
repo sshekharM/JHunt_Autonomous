@@ -1,73 +1,162 @@
 {
   "gate": "code-review",
   "reviewer": "instance-b",
-  "verdict": "PASS",
-  "pass": true,
-  "range": "53a8844..HEAD",
-  "summary": { "block": 0, "warn": 2, "info": 3 },
+  "verdict": "BLOCK",
+  "pass": false,
+  "range": "ea5e664..HEAD",
+  "story": "CHG-007",
+  "summary": { "block": 1, "warn": 5, "info": 7 },
   "findings": [
     {
       "id": "CRB-001",
-      "severity": "WARN",
+      "severity": "BLOCK",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/dependencies.py",
-      "line": 38,
-      "description": "The purpose-claim hardening is applied to only one of the two session entry points in the file the diff touched. get_current_user now goes through session_user_id (rejects any JWT carrying a `purpose` claim), but get_current_admin still calls decode_access_token directly and accepts any token that has an `admin_sub` claim, with no purpose check. No exploit exists today (nothing in app/ mints a token containing `admin_sub`, and pending_2fa tokens carry `sub`, not `admin_sub`), so this is not a reachable bypass, but the invariant 'a purpose-bound token is never a session' is only half enforced and will silently regress the moment an admin purpose-bound token (e.g. admin pending-2FA) is introduced.",
-      "fix": "In get_current_admin, reject purpose-bound tokens too: after `payload = decode_access_token(access_token)`, add `if \"purpose\" in payload: raise HTTPException(401, ...)` (or extract a shared `_session_claims(token)` helper in auth_service used by both dependencies)."
+      "file": "app/routers/onboarding.py",
+      "line": 295,
+      "issue": "CHG-007 makes the newest consent_records row authoritative (consent_store.current_consent -> consent_allows), but POST /api/onboarding/step/9 has no guard on user.onboarding_complete / onboarding_step. Any logged-in, TOTP-verified, active user can re-POST step 9 at any time; record_consent appends a fresh event='granted' row with consented_to_data_processing hardcoded True and auto_apply/llm_processing from the request body. That row instantly becomes current_consent, so it silently reverses a withdrawal and re-opens the LLM/auto-apply gates. The story states re-grant is out of scope and that 'there is no re-grant endpoint' (specs/stories/CHG-007-consent-withdrawal.md:53-56); after this diff that is false. The endpoint is untouched by the diff, but the diff changes its meaning from an inert append to an effective consent re-grant, and the audit trail records it as onboarding.complete / consent.granted rather than a re-grant. Only the data_processing case is incidentally protected (soft delete deactivates the user, so get_current_user 401s).",
+      "fix": "Add a two-line guard at the top of step9_consent: if user.onboarding_complete: raise HTTPException(409, 'Consent already recorded; withdrawal is at /api/consent/withdraw.'). Alternatively, accept the path explicitly by documenting it in the story and auditing it as consent.regranted - but it must not stay an undocumented bypass of the enforcement gate."
     },
     {
       "id": "CRB-002",
       "severity": "WARN",
       "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/routers/notifications.py",
-      "line": 12,
-      "description": "The diff rewrote this import line to add session_user_id but left decode_access_token imported; after the change it has no use anywhere in the module (the only decode path is session_user_id at line 27). ruff F401 would flag it, and the context pack records that ruff/mypy were not runnable in this venv, so the lint gate did not catch it.",
-      "fix": "Change line 12 to `from app.services.auth_service import session_user_id`. (`json` at line 2 and `get_db` at line 9 are also unused but were already unused before this change - leave them or clean separately.)"
+      "axis": "behaviour",
+      "file": "tests/integration/test_consent_withdrawal_db.py",
+      "line": 89,
+      "issue": "The test runs `alembic downgrade base` in a finally block (and `downgrade 0005` mid-test) against whatever settings.database_url points at, with no guard that the target is a disposable database. RUN_DB_TESTS=1 with a developer's or staging DATABASE_URL drops every shared table. The repo's own risk map (R12) treats irreversible data operations as requiring explicit care.",
+      "fix": "Before the first _alembic call, assert the target is a test database - e.g. `assert settings.database_url.rsplit('/', 1)[-1].endswith('_test')` (or require an explicit TEST_DATABASE_URL env var) and skip otherwise."
     },
     {
       "id": "CRB-003",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/notifications.py",
-      "line": 44,
-      "description": "CHG-004 AC2 and the risk-map entry say the socket is 'closed with code 1008'. Closing before accept() is the correct and secure choice, but per the ASGI spec a `websocket.close` sent in the CONNECTING state makes the server (uvicorn) reject the handshake with an HTTP 403 response; the 1008 close code is never put on the wire. The assertion in tests/unit/test_notifications.py:87-94 holds only because Starlette's TestClient surfaces the ASGI close message as WebSocketDisconnect(1008). Denial behaviour is correct either way; only the client-visible signal differs from the wording of the AC.",
-      "fix": "No code change needed. Note in CHG-004/risk-map R18 that real clients see an HTTP 403 handshake rejection (the 1008 code is the ASGI-level signal), so a future frontend does not wait for a close frame that never arrives."
+      "file": "app/services/consent_service.py",
+      "line": 39,
+      "issue": "The consent row is committed inside withdraw_consent before the side effects run. If disable_auto_apply (separate tenant session) or execute_deletion raises - transient tenant-schema or DB error - the request 500s with consent already withdrawn, and a retry is a no-op because withdrawal.withdrawn is then empty, so the side effect is never applied at all. For data_processing this means the DPDPA-mandated account deletion is silently skipped forever; for auto_apply the tenant preference stays enabled (masked only by the consent gate in apply_matched_jobs).",
+      "fix": "Drive the side effects off the resulting record rather than the delta, so a retry is self-healing: `if not consent_allows(withdrawal.record, 'auto_apply'): await disable_auto_apply(...)` and the equivalent guard (plus an is_active check) for the soft delete."
     },
     {
       "id": "CRB-004",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/auth.py",
-      "line": 169,
-      "description": "The pending_2fa token is not single-use. delete_cookie clears the browser's copy, but the JWT itself stays valid for the remainder of its 10 minutes, and verify_totp_code does not check user.totp_verified. A captured pending token plus a valid TOTP code could therefore mint a second 8-hour session after enrolment completed. Exposure is small (HttpOnly/Secure/SameSite=Lax cookie, <=10 min, still needs a live TOTP code) and AC4 only requires clearing the cookie, so this is a follow-up, not a defect against the story.",
-      "fix": "Cheapest hardening: after the user lookup, `if user.totp_verified: raise HTTPException(400, 'TOTP already verified.')` - a replayed pending token then cannot re-open a session. A jti denylist would be the fuller fix."
+      "file": "app/compliance/consent_store.py",
+      "line": 81,
+      "issue": "'Current consent' is defined solely by ORDER BY consented_at DESC LIMIT 1, and consented_at is stamped by the application host (_withdrawal_row, consent_store.py:119; record_consent relies on the Python column default), not by the database. There is no tie-break column, so two rows with equal timestamps order non-deterministically, and any backwards clock movement (NTP step, or a second app/worker container with a skewed clock - docker compose runs app, worker and beat) can make a withdrawal row sort before the grant it supersedes, leaving the withdrawal silently ineffective. The FOR UPDATE lock serialises the writers but does not guarantee the new row sorts last.",
+      "fix": "Add a deterministic tie-break and a server-side clock: `.order_by(ConsentRecord.consented_at.desc(), ConsentRecord.id.desc())` in current_consent (and the mirrored ASC order in consent_history), and stamp consented_at with server_default=func.now() / an inserted-sequence column rather than the app clock."
     },
     {
       "id": "CRB-005",
+      "severity": "WARN",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "tests/unit/test_consent_withdrawal.py",
+      "line": 165,
+      "issue": "Test honesty for AC5's concurrency clause. test_withdrawal_locks_the_user_row_before_reading_consent only asserts the compiled SQL string starts with 'SELECT users.id' and ends with 'FOR UPDATE' against a fake DB; it would still pass if the lock had no effect. The PostgreSQL integration test is single-threaded and, per the context pack, was not executed (RUN_DB_TESTS unset). Nothing that ran proves two concurrent withdrawals cannot copy a stale flag back to True.",
+      "fix": "Add a two-session case to tests/integration/test_consent_withdrawal_db.py: open two AsyncSessions, withdraw auto_apply in one and llm_processing in the other concurrently, and assert the final row has both flags False and exactly three rows exist."
+    },
+    {
+      "id": "CRB-006",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "app/tasks/auto_apply.py",
+      "line": 60,
+      "issue": "apply_matched_jobs grew from 219 to 228 lines (risk map R15 already names it as the worst offender against the project's 30-line ceiling). CLAUDE.md's ratchet says existing oversized code is grandfathered but an edit may not make it worse. About half the growth is unrelated import re-sorting inside _inner (auto_apply.py:70-78), which is drive-by style churn in the same function.",
+      "fix": "Keep the two _consent_refused calls but pull the prelude out: extract a module-level `async def _load_prefs(tenant_db)` (or `_gate(user_id, consent, prefs)`) returning None when the task must stop, and revert the multi-line reformat of the local import block so the net line count does not increase."
+    },
+    {
+      "id": "CRB-007",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "app/routers/consent.py",
+      "line": 37,
+      "issue": "Two independent definitions of 'current consent': the router derives it from consent_history(...)[-1] (ORDER BY consented_at ASC, take last) while every enforcement path uses consent_store.current_consent (ORDER BY consented_at DESC LIMIT 1). They agree only by coincidence of the two orderings; a change to either (see CRB-004) makes what the user is shown diverge from what is enforced.",
+      "fix": "Have the GET handler call consent_store.current_consent(user.id, db) for the `current` field (or add one helper in the store that returns history plus its latest element), so there is a single definition."
+    },
+    {
+      "id": "CRB-008",
       "severity": "INFO",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "tests/unit/test_auth.py",
-      "line": 237,
-      "description": "AC2 has two halves: a user_id query parameter is ignored, and the user comes from the cookie. Only the no-cookie half is tested (test_verify_without_pending_cookie_is_401_even_with_a_user_id). No test sends a valid pending token for user A together with `?user_id=B` and asserts the lookup still uses A. The suite is otherwise strong (69 passed; the reject-parametrisations assert db.queries == 0 / commits == 0, and the WS tests assert not-accepted and an empty registry, so they genuinely bite).",
-      "fix": "Add one case to test_verify_with_pending_token_and_good_code_opens_a_session using `params={\"user_id\": \"someone-else\"}` and keep the existing `users.id = 'user-123'` SQL assertion."
+      "file": "app/compliance/consent_store.py",
+      "line": 134,
+      "issue": "The idempotent no-op return and the NoConsentOnRecord raise both leave the users-row FOR UPDATE lock held, with no commit or rollback, until the caller's session closes at the end of the request.",
+      "fix": "await db.rollback() before `return Withdrawal(record=latest, withdrawn=())` and before raising NoConsentOnRecord."
+    },
+    {
+      "id": "CRB-009",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/routers/consent.py",
+      "line": 31,
+      "issue": "After withdrawing data_processing the soft delete sets is_active=False, so get_current_user 401s and the user can no longer read GET /api/consent - they lose access to their own consent history immediately after exercising the withdrawal right.",
+      "fix": "Out of scope for CHG-007 (deletion.py is frozen), but note it in the story's follow-up: the consent view should remain reachable for a deactivated-but-not-purged account."
+    },
+    {
+      "id": "CRB-010",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/tasks/auto_apply.py",
+      "line": 81,
+      "issue": "Consent is read once at task start; a withdrawal that lands while the per-user run is in flight is not observed, so up to apply_cap_daily applications can still be made after the withdrawal returns 200.",
+      "fix": "Either re-check consent_allows(consent, 'llm_processing') inside the per-job loop, or document the bounded window in the story."
+    },
+    {
+      "id": "CRB-011",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/compliance/dpdpa.py",
+      "line": 35,
+      "issue": "Forward deploy ordering: the new model selects consent_records.event, so the new code against a pre-0006 database fails on every consent read (login/onboarding/consent). The migration docstring only documents the backward direction (old code, new DB).",
+      "fix": "Confirm the deploy entrypoint runs `alembic upgrade head` before the app starts, and say so in the migration docstring."
+    },
+    {
+      "id": "CRB-012",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "app/compliance/consent_store.py",
+      "line": 100,
+      "issue": "consent_allows raises KeyError for a scope outside CONSENT_SCOPES instead of failing closed, which is at odds with the fail-closed contract in AC11 and the function's own docstring.",
+      "fix": "`return bool(getattr(record, CONSENT_SCOPES[scope]))` -> guard with `if scope not in CONSENT_SCOPES: return False`."
+    },
+    {
+      "id": "CRB-013",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/schemas/consent.py",
+      "line": 36,
+      "issue": "WithdrawConsentResponse.account_deletion is dict[str, Any], which leaks the untyped return of execute_deletion into the public API contract (CLAUDE.md asks for static typing everywhere) and leaves the response shape undocumented in OpenAPI.",
+      "fix": "Declare a small AccountDeletion model (mode, message, hard_delete_after) and use `AccountDeletion | None`, constructed from the summary dict."
+    },
+    {
+      "id": "CRB-014",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/unit/test_main.py",
+      "line": 13,
+      "issue": "test_main.py pins the Windows event-loop policy and the CORS configuration - neither is touched by CHG-007 and neither is an acceptance criterion; the router-registration check for AC7 already lives in test_consent.py. Harmless but outside the surgical scope of this story (as is the ruff import re-sort in app/main.py).",
+      "fix": "No action needed; keep in mind for scope hygiene, or move these pins to their own characterisation commit."
     }
   ],
-  "verification": {
-    "tests_run": "node .claude/scripts/run-compact.js --kind test -- .venv/Scripts/python.exe -m pytest -q tests/unit/test_auth.py tests/unit/test_auth_service.py tests/unit/test_dependencies.py tests/unit/test_notifications.py",
-    "result": "69 passed, 0 failed"
-  },
-  "checked_and_clear": [
-    "Cookie path /api/auth/totp matches request path /api/auth/totp/verify under RFC 6265 5.1.4 prefix rule; delete_cookie repeats the same path/attrs",
-    "Max-Age=600 == int(PENDING_2FA_TTL.total_seconds()); HttpOnly/Secure/SameSite=Lax present; no access_token cookie on the totp_setup branch",
-    "No in-repo caller of POST /api/auth/totp/verify or of /api/notifications/ws (installer/ does not call the API), so dropping the user_id parameter breaks no caller",
-    "totp_verified is written in exactly one place (auth.py:159), now cookie-bound; only one @router.websocket exists",
-    "Starlette 0.37 (fastapi 0.111) delete_cookie accepts secure/httponly/samesite; structlog 24.2.0 is in requirements and the logger name follows the project's '<pkg>.<module>' convention",
-    "_unregister is exception-safe in finally, removes only this socket by identity, and drops empty entries; no await between registry mutations so no interleaving race",
-    "SameSite=Lax + POST means the pending cookie is not sent on cross-site CSRF attempts against /totp/verify"
+  "verified_correct": [
+    "AC1 migration 0006 chain, additive server default, reversible downgrade (tests/unit/test_0006_consent_withdrawal.py, chain test extended).",
+    "AC3 append-only: _withdrawal_row constructs a new ConsentRecord and copies llm_choice/consent_version/consent_text_hash; no UPDATE or DELETE anywhere in the diff.",
+    "AC4 audit payload carries user_id and scopes only - no IP or user agent (asserted, including a negative repr check).",
+    "AC7 contract: empty list, unknown scope, non-list, missing key and extra key all 422 via the Literal + min_length=1 + extra='forbid' schema; NoConsentOnRecord -> 409; both routes 401 without a cookie; router registered in app.main.",
+    "AC9 enforcement completeness: grep confirms generate_tailored_resume / generate_cover_letter have no callers outside apply_matched_jobs, apply_to_job/queue_for_hitl have no other callers, and naukri._answer_screening_questions is string-matching, not an LLM call - so the gated paths really are the only LLM egress on this flow.",
+    "AC11 fail-closed: consent_allows requires data_processing and returns False for a missing record; parametrised over all three scopes.",
+    "expire_on_commit=False on AsyncSessionLocal, and FastAPI dependency caching, mean the User passed to execute_deletion is still attached and unexpired after withdraw_consent's commit.",
+    "FOR UPDATE ordering is sound under PostgreSQL's default READ COMMITTED: the blocked transaction takes a fresh snapshot after the lock is released, so it sees the committed withdrawal.",
+    "app/compliance/deletion.py is unchanged (R12 constraint honoured)."
   ]
 }

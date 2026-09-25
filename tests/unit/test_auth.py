@@ -8,7 +8,7 @@ normal session token cannot stand in for it.
 The rest of app/routers/auth.py (login redirect, per-provider userinfo parsing,
 new-user creation, logout) is pinned alongside so the fix cannot regress it.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pyotp
@@ -23,7 +23,7 @@ from sqlalchemy.dialects import postgresql
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.routers import auth
-from app.security.encryption import sha256_hash
+from app.security.encryption import decrypt, encrypt, sha256_hash
 from app.security.rate_limiter import limiter
 from app.services.auth_service import (
     create_access_token,
@@ -86,10 +86,11 @@ class _FakeOAuthClient:
 GOOGLE = _FakeOAuthClient({"userinfo": {"email": EMAIL, "sub": "g-1", "name": "Asha"}}, {})
 
 
-def _user(verified=False, onboarded=False):
+def _user(verified=False, onboarded=False, **overrides):
     return SimpleNamespace(
-        id=USER_ID, totp_secret=SECRET, totp_verified=verified,
-        onboarding_complete=onboarded, is_active=True,
+        id=USER_ID, totp_verified=verified, onboarding_complete=onboarded, is_active=True,
+        **{"totp_secret_encrypted": encrypt(SECRET), "totp_failed_attempts": 0,
+           "totp_locked_until": None, "totp_last_used_step": None, **overrides},
     )
 
 
@@ -183,6 +184,13 @@ def test_callback_for_unverified_user_sets_a_short_lived_pending_cookie(api):
     assert api.events == ["auth.totp_setup_required"]
 
 
+def test_callback_builds_the_provisioning_uri_from_the_decrypted_secret(api):
+    """CHG-005 AC3: the stored secret is ciphertext; the QR/URI carry the real one."""
+    body = _callback(api).json()
+
+    assert f"secret={SECRET}" in body["totp_uri"] and body["qr_code_base64"]
+
+
 def test_callback_looks_the_user_up_by_lowercased_email_hash(api):
     _callback(api)
 
@@ -195,6 +203,9 @@ def test_callback_creates_an_unverified_user_on_first_login(api):
 
     [created] = api.db.added
     assert created.totp_verified is False and created.oauth_sub == "g-1"
+    secret = decrypt(created.totp_secret_encrypted)  # CHG-005 AC3: stored encrypted
+    assert len(secret) == 32 and secret.encode() not in created.totp_secret_encrypted
+    assert f"secret={secret}" in response.json()["totp_uri"]
     assert created.onboarding_complete is False and created.onboarding_step == 1
     assert created.email_hash == sha256_hash(EMAIL.lower()) and api.db.commits == 1
     assert response.json()["is_new_user"] is True
@@ -278,6 +289,9 @@ def test_verify_with_pending_token_and_good_code_opens_a_session(api):
     assert response.status_code == 200
     assert response.json() == {"ok": True, "redirect": "/onboarding"}
     assert f"users.id = '{USER_ID}'" in _sql(api.db.statements[0])
+    assert _sql(api.db.statements[0]).endswith("FOR UPDATE")  # CHG-006 AC7
+    # a row already in the session must be refreshed, not served stale, under the lock
+    assert api.db.statements[0].get_execution_options()["populate_existing"] is True
     assert api.db.user.totp_verified is True and api.db.commits == 1
     [session] = _cookies(response, "access_token")
     claims = decode_access_token(_cookie_value(session))
@@ -311,6 +325,15 @@ def test_verify_for_an_onboarded_user_redirects_to_the_dashboard(api):
     assert response.json() == {"ok": True, "redirect": "/dashboard"}
 
 
+def test_verify_for_a_user_without_a_totp_secret_is_401(api):
+    """An anonymised row holds b"" instead of a ciphertext; refuse it, never 500."""
+    api.db.user = _user(totp_secret_encrypted=b"")
+    response = _verify(api, token=create_pending_2fa_token(USER_ID))
+
+    assert response.status_code == 401
+    assert api.db.commits == 0 and api.events == []
+
+
 def test_verify_for_a_vanished_user_is_404(api):
     api.db.user = None
 
@@ -321,7 +344,8 @@ def test_verify_with_bad_code_is_400_and_audited(api):
     response = _verify(api, token=create_pending_2fa_token(USER_ID), code="000000x")
 
     assert response.status_code == 400
-    assert api.db.user.totp_verified is False and api.db.commits == 0
+    assert api.db.user.totp_verified is False
+    assert api.db.user.totp_failed_attempts == 1 and api.db.commits == 1  # CHG-006 AC3
     assert _cookies(response, "access_token") == []
     assert api.events == ["auth.totp_failed"]
 
@@ -331,6 +355,62 @@ def test_verify_keeps_its_rate_limit_of_ten_per_minute(api):
 
     assert statuses[:10] == [401] * 10
     assert statuses[10] == 429
+
+
+# --- CHG-006: per-account lockout and replay guard --------------------------------
+
+def _step_now():
+    return int(datetime.now(timezone.utc).timestamp()) // 30
+
+
+def test_fifth_failure_locks_the_account_and_later_attempts_get_429(api):
+    token = create_pending_2fa_token(USER_ID)
+    statuses = [_verify(api, token=token, code="000000x").status_code for _ in range(6)]
+
+    assert statuses == [400] * 5 + [429]
+    locked_until = api.db.user.totp_locked_until
+    assert timedelta(minutes=14) < locked_until - datetime.now(timezone.utc) <= timedelta(minutes=15)
+    assert api.events == ["auth.totp_failed"] * 5 + ["auth.totp_locked"]
+
+
+def test_a_locked_account_is_refused_without_checking_even_a_good_code(api):
+    api.db.user = _user(totp_locked_until=datetime.now(timezone.utc) + timedelta(seconds=90))
+    response = _verify(api, token=create_pending_2fa_token(USER_ID))
+
+    assert response.status_code == 429
+    assert 89 <= int(response.headers["retry-after"]) <= 90
+    assert api.db.user.totp_verified is False and api.db.commits == 0
+    assert api.db.user.totp_failed_attempts == 0
+    assert _cookies(response, "access_token") == []
+    assert api.events == ["auth.totp_locked"]
+
+
+def test_codes_are_checked_again_once_the_lock_has_expired(api):
+    api.db.user = _user(totp_locked_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+
+    assert _verify(api, token=create_pending_2fa_token(USER_ID)).status_code == 200
+
+
+def test_success_resets_the_count_and_remembers_the_step(api):
+    api.db.user = _user(totp_failed_attempts=4)
+    before = _step_now()
+    response = _verify(api, token=create_pending_2fa_token(USER_ID))
+
+    assert response.status_code == 200
+    user = api.db.user
+    assert user.totp_failed_attempts == 0 and user.totp_locked_until is None
+    assert before <= user.totp_last_used_step <= _step_now()
+
+
+def test_a_code_from_the_last_accepted_step_is_a_replay(api):
+    api.db.user = _user(totp_last_used_step=_step_now() + 1)
+    response = _verify(api, token=create_pending_2fa_token(USER_ID))
+
+    assert response.status_code == 400
+    assert api.db.user.totp_verified is False
+    assert api.db.user.totp_failed_attempts == 1 and api.db.commits == 1
+    assert _cookies(response, "access_token") == []
+    assert api.events == ["auth.totp_failed"]
 
 
 # --- logout -----------------------------------------------------------------------

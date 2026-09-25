@@ -1,114 +1,111 @@
 {
   "gate": "code-review",
-  "reviewer": "code-reviewer (fresh context, pass A)",
-  "verdict": "PASS",
-  "pass": true,
-  "range": "fix/admin-ip-allowlist..HEAD",
-  "commits": ["aa9274d", "b02ef98", "7286234"],
-  "scope": "app/ and tests/ only (CHG-003 / R17, CHG-004 / R18)",
-  "tests_run": "python -m pytest tests/unit/test_auth.py tests/unit/test_auth_service.py tests/unit/test_dependencies.py tests/unit/test_notifications.py -q -> 72 passed, exit 0",
-  "summary": { "block": 0, "warn": 2, "info": 7 },
+  "reviewer": "instance-a",
+  "verdict": "BLOCK",
+  "pass": false,
+  "range": "ea5e664..HEAD",
+  "story": "CHG-007",
+  "summary": { "block": 1, "warn": 5, "info": 4 },
   "findings": [
     {
       "id": "CRA-001",
-      "severity": "WARN",
+      "severity": "BLOCK",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/notifications.py",
-      "line": 49,
-      "message": "The keep-alive loop only exits on WebSocketDisconnect, but it never awaits websocket.receive(), which is the only place Starlette raises that exception. Under uvicorn 0.29 [standard] a real client disconnect surfaces from the send side (websockets ConnectionClosed), which suppress(WebSocketDisconnect) does not catch, so every disconnect escapes the handler and uvicorn logs an 'Exception in ASGI application' traceback. The new finally block still unregisters the socket, so the registry stays correct; the impact is log noise plus an untested exit path. The test proves it only because _disconnect_after_one_ping monkeypatches asyncio.sleep to raise WebSocketDisconnect, which cannot happen in production.",
-      "fix": "Widen the suppressed exception set on the loop (e.g. suppress(WebSocketDisconnect, ConnectionError, RuntimeError)) or drive the loop with a receive() task so the disconnect arrives as WebSocketDisconnect, and add one test that raises the send-side error instead of a synthetic asyncio.sleep failure."
+      "file": "app/services/consent_service.py",
+      "line": 40,
+      "issue": "withdraw() gates its side effects on withdrawal.withdrawn (the scopes this call newly flipped) instead of on the resulting consent state. withdraw_consent() has already COMMITTED the consent row (consent_store.py:137) before disable_auto_apply (line 41) and execute_deletion (line 45) run, and those two calls are outside that transaction. If either raises - tenant connection error, validate_schema_name ValueError on a malformed schema_name, a commit failure inside _soft_delete - the consent row is durably persisted but the side effect never happens and the caller gets a 500. A retry is then permanently a no-op: consent_store.withdraw_consent computes newly = scopes still True, finds none, returns Withdrawal(withdrawn=()), so the router answers 200 with {\"withdrawn\": [], \"account_deletion\": null} while auto_apply_enabled is still True and the account was never deactivated or scheduled for deletion (AC8/AC10 silently unsatisfied, with a success response). There is no other code path that re-drives these effects. The area is flagged high-risk by specs/brownfield/risk-map.md R11 (legally load-bearing consent machinery), and tests/unit/test_consent_service.py:98 (test_a_repeated_withdrawal_triggers_nothing_again) pins the broken behaviour, so no existing test would fail if the defect were present.",
+      "fix": "Drive the side effects from the post-withdrawal record rather than from the delta: replace `if \"auto_apply\" in withdrawal.withdrawn` with `if not withdrawal.record.consented_to_auto_apply` and `if \"data_processing\" in withdrawal.withdrawn` with `if not withdrawal.record.consented_to_data_processing`. Both helpers are already idempotent (disable_auto_apply no-ops when the pref is already False; _soft_delete just re-sets is_active/audits), so a retry completes the withdrawal. Update test_a_repeated_withdrawal_triggers_nothing_again to assert the side effects DO re-run on retry while no new consent row or audit event is written."
     },
     {
       "id": "CRA-002",
       "severity": "WARN",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "app/routers/auth.py",
-      "line": 158,
-      "message": "`code: str` is an unannotated scalar on a POST route, so FastAPI binds it as a query parameter. The one-time TOTP code therefore travels in the request line and lands in nginx/uvicorn access logs, proxy logs and browser history. The diff rewrote this signature (removing user_id) and left `code` where it was. CHG-003 records this as a deferred follow-up, so it does not block, but it is the last remaining transport weakness on the path this story hardens.",
-      "fix": "Move `code` into a Pydantic request body model (e.g. `body: TotpVerifyRequest`) in a follow-up; the cookie-based user derivation already lands, so this is a one-line signature change plus the schema."
+      "file": "app/routers/consent.py",
+      "line": 39,
+      "issue": "GET /api/consent derives `current` as `history[-1]` (last element of the consent_history ASC list) rather than calling consent_store.current_consent. The codebase now has two independent definitions of \"the latest consent\": ORDER BY consented_at ASC then take the last, versus ORDER BY consented_at DESC LIMIT 1. With duplicate consented_at values (or after the ordering issue in CRA-003) the two can disagree, so the user could be shown flags that differ from the ones apply_matched_jobs actually enforces. It is also duplicated logic the diff could have reused.",
+      "fix": "Call `await consent_store.current_consent(user.id, db)` for the `current` field and keep consent_history only for the `history` list, so display and enforcement read the record through the same query."
     },
     {
       "id": "CRA-003",
-      "severity": "INFO",
-      "confidence": "high",
+      "severity": "WARN",
+      "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/notifications.py",
-      "line": 62,
-      "message": "push_to_user logs a failed send but never unregisters the dead socket, so a socket whose ping loop has not yet terminated stays in _connections and re-logs notifications.ws_push_failed on every subsequent push (log amplification, unbounded registry growth for long-lived processes). AC5 only requires the log line, so this is an observation rather than a story gap.",
-      "fix": "Call _unregister(user_id, ws) in the except branch after logging."
+      "file": "app/compliance/consent_store.py",
+      "line": 119,
+      "issue": "Which record is 'current' is decided entirely by consented_at, and consented_at is generated in Python by whichever process writes the row (_withdrawal_row passes datetime.now(timezone.utc); record_consent relies on the model's Python-side default). docker-compose runs app, worker and beat as separate containers, so a withdrawal written by a host whose clock trails the one that wrote the grant sorts BEFORE the grant; current_consent then returns the stale grant and apply_matched_jobs keeps processing after a valid withdrawal. Nothing in the diff guards against a non-monotonic consented_at, and the ORDER BY has no tie-breaker.",
+      "fix": "Let the database clock order the rows: pass `consented_at=sa.func.now()` in _withdrawal_row (and/or give ConsentRecord.consented_at a `server_default=func.now()`), so all rows are stamped by the single Postgres clock. Cheapest alternative: add a monotonic sequence column and order by it."
     },
     {
       "id": "CRA-004",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/dependencies.py",
-      "line": 40,
-      "message": "Asymmetry introduced by the diff: get_current_user now delegates claim extraction to session_user_id(), while get_current_admin still inlines decode_access_token() + payload.get('admin_sub') + the new `'purpose' in payload` guard. The purpose rule now lives in two places, so a future third token purpose must be remembered twice.",
-      "fix": "Add an admin_user_id(token) helper next to session_user_id() in app/services/auth_service.py and have get_current_admin call it."
+      "axis": "behaviour",
+      "file": "app/tasks/auto_apply.py",
+      "line": 81,
+      "issue": "Consent is read once at the top of _inner and never re-read. The per-job loop (lines 166-281) then runs up to apply_cap_daily iterations, each doing parse_master_resume + generate_tailored_resume + generate_cover_letter (LLM provider calls with the user's resume) and a live portal submission - minutes of work. A withdrawal of llm_processing or auto_apply that lands mid-run is not honoured for the remainder of the batch, so the user's data continues to reach the LLM provider after they exercised DPDP s.6(4). No test covers a withdrawal arriving mid-run.",
+      "fix": "Re-read consent inside the loop before the tailoring block: `consent = await consent_store.current_consent(user_id, shared_db)` then `if _consent_refused(user_id, consent, \"llm_processing\"): break` immediately before the parse_master_resume call (and the same for \"auto_apply\" before apply_to_job)."
     },
     {
       "id": "CRA-005",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "app/routers/notifications.py",
-      "line": 43,
-      "message": "The WebSocket authorises on the signed token alone, so unlike get_current_user it never re-checks that the user still exists, is_active, and has totp_verified. A deactivated user keeps receiving live pushes for the remaining life of the 8-hour cookie. CHG-004 declares this explicitly out of scope, so it is recorded, not charged against the diff.",
-      "fix": "None required for this story. If it is picked up later, resolve the User row before accept() the same way get_current_user does."
+      "file": "tests/integration/test_consent_withdrawal_db.py",
+      "line": 69,
+      "issue": "AC5's core claim - that SELECT ... FOR UPDATE serialises concurrent withdrawals so neither copies a stale flag back to True - is never executed. The unit test (tests/unit/test_consent_withdrawal.py:157) only asserts that the compiled SQL string ends with 'FOR UPDATE'; it does not prove the lock is held across the read and the insert, and the FakeDB has no transaction at all. The only real-PostgreSQL test is skipped unless RUN_DB_TESTS=1 (and the context pack confirms it was not run), and even that test issues the two withdrawals sequentially via separate sessions - never concurrently - despite its docstring claiming 'the user row lock is taken'.",
+      "fix": "Add one concurrency case to test_consent_withdrawal_db.py: open two sessions, run withdraw_consent(['auto_apply']) and withdraw_consent(['llm_processing']) with asyncio.gather, and assert the final current_consent has BOTH flags False and exactly two new rows exist. Also drop or substantiate the 'user row lock is taken' claim in the module docstring."
     },
     {
       "id": "CRA-006",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "high",
       "axis": "maintainability",
-      "file": "app/routers/auth.py",
-      "line": 159,
-      "message": "The pending cookie name is expressed twice: the PENDING_2FA_COOKIE constant on the write side and the bare parameter name `pending_2fa` on the read side. Renaming the constant would silently stop the endpoint from reading the cookie it sets.",
-      "fix": "Bind the read through the constant: `pending_2fa: Optional[str] = Cookie(default=None, alias=PENDING_2FA_COOKIE)`."
+      "file": "app/schemas/consent.py",
+      "line": 36,
+      "issue": "`account_deletion: dict[str, Any] | None` puts an untyped Any-valued dict in a public API response model. CLAUDE.md mandates 'Static typing everywhere (zero any)', and the response contract for the deletion summary is left unspecified for clients and unverifiable by mypy. The rest of the module is precisely typed, so this is local drift.",
+      "fix": "Add `class DeletionSummary(BaseModel): mode: str; message: str; hard_delete_after: str` and type the field `DeletionSummary | None`; the router can construct it from the execute_deletion dict. app/compliance/deletion.py itself stays unchanged."
     },
     {
       "id": "CRA-007",
       "severity": "INFO",
-      "confidence": "high",
+      "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/auth.py",
-      "line": 165,
-      "message": "The pending_2fa cookie is cleared only on the success path. After a 400 (bad code), an abandoned enrolment, or logout it stays in the browser until its 10-minute Max-Age elapses. Bounded by the TTL and by the totp_verified single-use check, so the exposure is small.",
-      "fix": "No change needed; if tightened later, delete the cookie on the 400 branch too."
+      "file": "app/compliance/consent_store.py",
+      "line": 135,
+      "issue": "On the idempotent no-op path withdraw_consent returns after taking the FOR UPDATE lock on the users row without committing or rolling back, so the row lock is held until the caller's session is closed (get_db's finally). Harmless in the current short request, but it silently blocks a concurrent withdrawal for the rest of the request lifetime.",
+      "fix": "`await db.commit()` before the `return Withdrawal(record=latest, withdrawn=())` to release the lock. Do not use rollback - it would expire the User instance loaded by get_current_user and turn the later `user.schema_name` read into a lazy refresh on an async session."
     },
     {
       "id": "CRA-008",
       "severity": "INFO",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "app/routers/auth.py",
-      "line": 136,
-      "message": "The pending_2fa cookie is Secure, so the TOTP enrolment flow cannot complete over plain http (e.g. the docker compose app on http://localhost:8000). This matches the existing access_token cookie, which is already Secure, so it is consistent rather than a regression - noting it because it makes local manual testing of the new flow require TLS.",
-      "fix": "None. Exercise the flow through the TLS-terminating nginx service or via the unit tests."
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/compliance/consent_store.py",
+      "line": 103,
+      "issue": "The set of valid scopes is declared twice: CONSENT_SCOPES here and the ConsentScope Literal in app/schemas/consent.py:7. _checked_scopes raises a bare ValueError that the router does not catch (it would surface as a 500); it is unreachable today only because the Literal happens to match. Drift is caught by test_consent.py:66, which keeps this at INFO.",
+      "fix": "Derive the Literal from the mapping, e.g. `ConsentScope = Literal[tuple(CONSENT_SCOPES)]` via typing, or catch ValueError in the router and return 422."
     },
     {
       "id": "CRA-009",
       "severity": "INFO",
       "confidence": "high",
       "axis": "maintainability",
-      "file": "app/routers/auth.py",
-      "line": 37,
-      "message": "callback() is still ~82 lines (provider dispatch + user creation + session issue), over the 30-line project limit. Pre-existing and grandfathered; the diff moved 11 lines out of it into _totp_setup_response, so the ratchet moved the right way. Recorded as context only.",
-      "fix": "None in this change. A later refactor could extract the per-provider userinfo parsing into a _userinfo(provider, client, token) helper."
+      "file": "app/main.py",
+      "line": 19,
+      "issue": "Beyond the one line CHG-007 needs (`app.include_router(consent.router)` plus the `consent` import), the whole import block is re-sorted and `import sys`/`import asyncio` are swapped - drive-by reformatting unrelated to the story. tests/unit/test_consent_store.py's import was likewise reflowed with no behavioural change. This inflates the diff a reviewer must read against the surgical-change principle.",
+      "fix": "No action required if the repo-wide ruff isort pass is an accepted separate commit (4a522c4); keep such reformatting out of feature commits in future."
+    },
+    {
+      "id": "CRA-010",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/tasks/auto_apply.py",
+      "line": 21,
+      "issue": "_consent_refused reads as a pure predicate but emits a structlog line and an audit event as a side effect of being asked a question. The docstring says so, but a caller adding a second check would silently double-audit. Also note apply_matched_jobs still gets dispatched by auto_apply_for_all_users for every active user who has withdrawn, so each beat tick writes another consent.enforced row - that is what AC8 asks for, but the audit volume grows with the beat schedule, not with user action.",
+      "fix": "Optional: rename to refuse_and_audit(), or split the audit call out of the predicate. If audit volume matters, filter withdrawn users in auto_apply_for_all_users before dispatch."
     }
-  ],
-  "verified_correct": [
-    "AC1: pending cookie is HttpOnly/Secure/SameSite=Lax/Max-Age=600/Path=/api/auth/totp, JWT carries sub + purpose=totp_setup with exp-iat == 600, and no access_token is set on that branch.",
-    "Cookie path /api/auth/totp path-matches /api/auth/totp/verify per RFC 6265 5.1.4 and does not match a sibling like /api/auth/totpfoo.",
-    "AC2/AC3: verify derives the user only from the cookie; missing, expired, bad-signature, wrong-purpose, subject-less and plain-session tokens all 401 before any DB query (asserted via db.queries == 0).",
-    "AC4: totp_verified commit, access_token issue, pending cookie cleared on the same path, unchanged response body.",
-    "AC6/AC8: session_user_id rejects any token with a purpose claim; get_current_admin rejects purpose-bound tokens; a pending token is spent once its user is totp_verified.",
-    "No other call site decodes access tokens - decode_access_token has exactly three callers (dependencies.py, auth_service.py), so there is no third path where a purpose-bound token would still pass as a session.",
-    "R18: close(1008) happens before accept() and before registration for missing/garbage/expired/pending-2fa/other-user tokens; the finally + _unregister pair fixes the old KeyError/ValueError cleanup and preserves the user's other sockets.",
-    "Control flow of the OAuth callback is unchanged by the _totp_setup_response extraction; no schema provisioning or audit event was skipped or duplicated.",
-    "No test file or assertion was deleted (35 deletions, all in app/); the branch adds 754 lines of tests across 4 files and all 72 pass."
   ]
 }

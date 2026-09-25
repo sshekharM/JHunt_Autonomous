@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -10,8 +11,9 @@ from app.services.auth_service import (
     oauth, create_access_token, build_user_thumbprint,
     create_pending_2fa_token, decode_pending_2fa_token, PENDING_2FA_TTL,
 )
-from app.security.encryption import encrypt, sha256_hash
-from app.security.totp import generate_totp_secret, get_totp_uri, generate_qr_code_base64, verify_totp
+from app.security.encryption import decrypt, encrypt, sha256_hash
+from app.security.totp import generate_totp_secret, get_totp_uri, generate_qr_code_base64, matched_totp_step
+from app.services.totp_lockout import is_replayed_step, lock_seconds_left, record_failure, record_success
 from app.security.audit_log import audit
 from app.security.rate_limiter import limiter
 from app.dependencies import get_current_user
@@ -90,7 +92,7 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
             schema_name="",
             oauth_provider=OAuthProvider(provider),
             oauth_sub=sub,
-            totp_secret=generate_totp_secret(),
+            totp_secret_encrypted=encrypt(generate_totp_secret()),
             totp_verified=False,
             onboarding_complete=False,
             onboarding_step=1,
@@ -122,7 +124,7 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
 
 def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONResponse:
     """TOTP enrolment payload plus the short-lived pending_2fa cookie that /totp/verify requires."""
-    uri = get_totp_uri(user.totp_secret, email)
+    uri = get_totp_uri(decrypt(user.totp_secret_encrypted), email)
     qr_b64 = generate_qr_code_base64(uri)
     audit("auth.totp_setup_required", user_id=user.id)
     setup = JSONResponse({
@@ -143,13 +145,45 @@ def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONRespo
 async def _pending_2fa_user(pending_2fa: Optional[str], db: AsyncSession) -> User:
     """User named by a valid pending_2fa cookie; a token for an already-verified user is spent."""
     user_id = decode_pending_2fa_token(pending_2fa)
-    result = await db.execute(select(User).where(User.id == user_id))
+    # FOR UPDATE: concurrent attempts for one account queue, so counters and steps stay exact;
+    # populate_existing so a row already in the session is re-read under the lock, not reused
+    result = await db.execute(
+        select(User).where(User.id == user_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     if user.totp_verified:
         raise HTTPException(status_code=401, detail="Pending 2FA session already used.")
+    if not user.totp_secret_encrypted:  # anonymised: no secret left to check against
+        raise HTTPException(status_code=401, detail="No TOTP enrolment for this account.")
     return user
+
+
+async def _check_totp_code(user: User, code: str, db: AsyncSession) -> None:
+    """Refuse locked accounts, bad codes and replayed time steps (CHG-006).
+
+    A failure commits its counter here, before raising. A success only updates
+    the counters and leaves the commit to the caller, together with the rest of
+    the successful verification.
+    """
+    now = datetime.now(timezone.utc)
+    wait = lock_seconds_left(user, now)
+    if wait:
+        audit("auth.totp_locked", user_id=user.id)
+        raise HTTPException(
+            status_code=429, detail="Too many invalid TOTP codes. Try again later.",
+            headers={"Retry-After": str(wait)},
+        )
+    step = matched_totp_step(decrypt(user.totp_secret_encrypted), code, now)
+    if step is None or is_replayed_step(user, step):
+        record_failure(user, now)
+        await db.commit()
+        audit("auth.totp_failed", user_id=user.id,
+              details={"reason": "invalid" if step is None else "replayed"})
+        raise HTTPException(status_code=400, detail="Invalid TOTP code.")
+    record_success(user, step)
 
 
 class TotpVerifyRequest(BaseModel):
@@ -165,10 +199,7 @@ async def verify_totp_code(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _pending_2fa_user(pending_2fa, db)
-    if not verify_totp(user.totp_secret, body.code):
-        audit("auth.totp_failed", user_id=user.id)
-        raise HTTPException(status_code=400, detail="Invalid TOTP code.")
-
+    await _check_totp_code(user, body.code, db)
     user.totp_verified = True
     await db.commit()
     audit("auth.totp_verified", user_id=user.id)

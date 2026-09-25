@@ -1,136 +1,193 @@
 {
   "gate": "code-review",
-  "verdict": "PASS",
   "pass": true,
-  "range": "7c1cc13..9e364c2",
-  "branch": "fix/admin-ip-allowlist",
-  "summary": { "block": 0, "warn": 4, "info": 6 },
-  "verification": {
-    "tests_run": ".venv/Scripts/python.exe -m pytest -q tests/ -> exit 0, 454 passed, 10 skipped (run with APP_ENV unset, i.e. the new production default)",
-    "targeted_run": "tests/unit/{test_ip_allowlist,test_config,test_pii_policy,test_consent_store,test_onboarding,test_admin_config_ops}.py -> 80 passed",
-    "pii_heuristic_executed": "unprotected_pii_columns over all mapped columns -> flags exactly {(users,totp_secret),(admin_users,totp_secret)}",
-    "lint_types": "ruff/mypy not installed in .venv - NOT RUN"
+  "range": "e483f81..HEAD",
+  "policy": "union",
+  "summary": {
+    "block": 0,
+    "warn": 0,
+    "info": 20
   },
   "findings": [
     {
-      "id": "CR-001",
-      "level": "WARN",
+      "id": "CR-A-001",
       "severity": "WARN",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "app/security/pii_policy.py",
-      "line": 46,
-      "description": "consent_records.user_agent is stored plaintext but is neither flagged by _looks_like_pii nor recorded in PLAINTEXT_EXCEPTIONS, while ip_address in the same table is an explicit reviewed exception. The consent-audit comment added in the same range ('IP and user agent stay in the consent record only, not the log stream') treats the two as equally sensitive, so the R6 policy silently covers only half of the network identifiers it claims to govern.",
-      "message": "consent_records.user_agent escapes the PII policy while the sibling ip_address needs a reviewed exception.",
-      "fix": "Add \"agent\" to PII_NAME_TOKENS and ('consent_records', 'user_agent') to PLAINTEXT_EXCEPTIONS with the same DPDPA-evidence rationale."
-    },
-    {
-      "id": "CR-002",
-      "level": "WARN",
-      "severity": "WARN",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "app/security/pii_policy.py",
-      "line": 45,
-      "description": "PII_NAME_TOKENS omits the secret-shaped tokens most likely to appear next in this codebase ('token', 'otp', 'ssn', 'passport'), and 'dob' only matches as a standalone underscore token so 'date_of_birth' is missed. A future plaintext column such as telegram_bot_token, refresh_token, or date_of_birth would pass test_no_model_column_stores_pii_in_plaintext, which is the whole enforcement mechanism for R6. No such column exists today (verified by running the heuristic over every mapped column), so this is a coverage gap, not a live defect.",
-      "message": "PII token list misses token/otp/ssn/passport and date_of_birth, so those columns would pass the R6 gate in plaintext.",
-      "fix": "Add \"token\", \"otp\", \"ssn\", \"passport\", \"birth\" to PII_NAME_TOKENS. Do not add \"key\": it would false-positive on the existing master_resume.minio_key / tailored_resumes.minio_key columns."
-    },
-    {
-      "id": "CR-003",
-      "level": "WARN",
-      "severity": "WARN",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "docker-compose.prod.yml",
-      "line": 75,
-      "description": "172.28.0.10 is the trust anchor for the whole admin allowlist and is hardcoded in two independent places (the app's --forwarded-allow-ips at :75 and nginx's ipv4_address at :134), plus a third copy in .env.example prose. Nothing validates that they agree (CI only runs nginx -t; there is no `docker compose config` check). If the subnet or the nginx address drifts, uvicorn stops trusting nginx, every admin request is evaluated against nginx's container IP, and admin is either fully locked out or 'fixed' by adding the proxy IP to ALLOWED_IPS - the exact failure mode .env.example warns is internet-wide exposure.",
-      "message": "The nginx trust IP is a magic constant duplicated across two compose keys with no check that they agree.",
-      "fix": "Declare it once (e.g. NGINX_IP=172.28.0.10 in .env) and interpolate ${NGINX_IP:-172.28.0.10} into both the nginx ipv4_address and the app's --forwarded-allow-ips."
-    },
-    {
-      "id": "CR-004",
-      "level": "WARN",
-      "severity": "WARN",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "docker-compose.yml",
-      "line": 68,
-      "description": "APP_ENV: ${APP_ENV:-development} fails open. A compose `environment:` entry takes precedence over `env_file: .env`, so when interpolation cannot resolve APP_ENV (non-default --env-file, an explicit --project-directory, or a missing .env) the container runs as development regardless of APP_ENV=production inside the env file - re-enabling /api/docs and non-https session cookies, the precise posture R9 removed. This is on a production path: installer/core/autostart.py:49 deploys real installations with docker-compose.yml, and installer/core/env_writer.py:55 relies on APP_ENV=production being honoured. The default paths (systemd WorkingDirectory=install_dir; the Windows task's `cd /d install_dir`) do resolve correctly today, which is why this is a WARN rather than a BLOCK.",
-      "message": "Compose fallback ${APP_ENV:-development} can silently override a production env_file value on the installer's deployment path.",
-      "fix": "Use ${APP_ENV:-production}. Local dev still resolves to development because init.sh copies .env.example (APP_ENV=development) to .env, which compose interpolates."
-    },
-    {
-      "id": "CR-005",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "docker-compose.prod.yml",
-      "line": 134,
-      "description": "Docker's IPAM allocates dynamic addresses sequentially from 172.28.0.2 and does not pre-reserve statically configured addresses. With the six dynamically addressed services today the pool tops out around .7, so .10 is safe; adding three more services (or scaling one) can hand .10 to another container first, after which nginx fails to start with 'Address already in use'. nginx starts last (depends_on: app), which maximises the exposure.",
-      "message": "Static ipv4_address 172.28.0.10 sits inside the dynamic allocation pool.",
-      "fix": "Reserve the dynamic pool away from the static address: add `ip_range: 172.28.0.0/25` under the ipam config and move nginx to 172.28.0.130 (or keep .10 and set ip_range to 172.28.0.128/25)."
-    },
-    {
-      "id": "CR-006",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/routers/admin/config.py",
-      "line": 9,
-      "description": "The same four-line guarded-router construction is repeated across all six admin routers; a seventh admin router can silently omit the dependency. The risk is contained because tests/unit/test_ip_allowlist.py:43 enumerates the app's actual routes and fails on any unguarded /api/admin path, so this is style, not exposure.",
-      "message": "Router-level allowlist dependency duplicated in six files.",
-      "fix": "Optional: pass dependencies=[Depends(require_server_ip)] once at each app.include_router(admin_*) call in app/main.py instead of in each router module."
-    },
-    {
-      "id": "CR-007",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "behaviour",
-      "file": "app/security/ip_allowlist.py",
-      "line": 24,
-      "description": "A denied admin request raises 403 without emitting an audit event, so an IP scan of /api/admin leaves no trace in the log stream while successful admin actions are audited. Listed as a deferred follow-up in specs/stories/CHG-002-admin-ip-allowlist.md, so it is recorded, not re-litigated.",
-      "message": "Denied admin attempts are not audited.",
-      "fix": "Call audit(\"admin.ip_denied\", details={\"client_ip\": client_ip}) immediately before raising the HTTPException."
-    },
-    {
-      "id": "CR-008",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "tests/unit/test_config.py",
-      "line": 28,
-      "description": "test_unrecognised_app_env_is_rejected asserts only that some ValidationError is raised; it would pass for the wrong reason if any other required setting were missing. It is non-vacuous today because the root conftest.py seeds APP_SECRET_KEY / POSTGRES_PASSWORD / MINIO_SECRET_KEY / FERNET_KEY, but the assertion does not pin that.",
-      "message": "Rejection test does not assert which field failed validation.",
-      "fix": "Use pytest.raises(ValidationError, match=\"app_env\") so the test can only pass for the Literal constraint."
-    },
-    {
-      "id": "CR-009",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": "tests/unit/test_onboarding.py",
+      "file": "app/routers/auth.py",
       "line": 169,
-      "description": "assert len(wired.tenant.executed) == 2 pins the number of SQL statements the handler issues rather than an observable outcome, so a behaviour-preserving refactor that merges two statements would fail it. Acceptable as deliberate characterization pinning ahead of the R15/R16 extraction work, but it should not outlive that refactor.",
-      "message": "Characterization test asserts internal statement count.",
-      "fix": "Replace with an assertion on the resulting profile state once the onboarding extraction lands."
+      "description": "CHG-006 AC6's replay guard is unreachable in production. totp_last_used_step is written only by record_success (app/services/totp_lockout.py:36), which is immediately followed by user.totp_verified = True in the same transaction (auth.py:175 -> 192 -> 193). The only caller of _check_totp_code is /api/auth/totp/verify, and _pending_2fa_user (auth.py:153) raises 401 for any user with totp_verified True. Nothing in app/ ever sets totp_verified back to False and there is no admin TOTP verify endpoint, so is_replayed_step can only ever observe last=None and always returns False. The AC6 test (tests/unit/test_auth.py::test_a_code_from_the_last_accepted_step_is_a_replay) fabricates totp_verified=False + totp_last_used_step set, a row state the application cannot produce.",
+      "fix": "Keep the guard (it is the right shape for the future returning-user TOTP check) but record the reachability in one comment on app/services/totp_lockout.py::is_replayed_step: the step is only observable once TOTP is required at login, so today it is defence-in-depth, not a live control. Do not let the story claim the endpoint is replay-proof today without that note."
     },
     {
-      "id": "CR-010",
-      "level": "INFO",
+      "id": "CR-A-002",
+      "severity": "WARN",
+      "file": "app/routers/auth.py",
+      "line": 168,
+      "description": "Blank-secret contract mismatch between the migration and the app. alembic/versions/0004_encrypt_totp_secret.py maps \"\" <-> b\"\" deliberately, but app.security.encryption.decrypt(b\"\") raises cryptography.fernet.InvalidToken. Both production decrypt call sites (auth.py:168 in _check_totp_code and auth.py:127 in _totp_setup_response) would therefore raise an unhandled 500 for an anonymised row, which app/compliance/deletion.py:86 now sets to b\"\". Refuted as a BLOCK: anonymise keeps totp_verified True (so _pending_2fa_user 401s first) and rewrites email_hash to anonymised_<id> (so the callback lookup cannot find the row), and get_current_user already refuses is_active False. Reachable only if a future change clears totp_verified or adds another lookup path.",
+      "fix": "Minimum change: in _pending_2fa_user, refuse a row with a falsy totp_secret_encrypted (and a falsy is_active) with 401 before any decrypt, so the blank-secret sentinel can never reach Fernet."
+    },
+    {
+      "id": "CR-A-003",
+      "severity": "WARN",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 86,
+      "description": "The contract step (batch_alter_table -> SET NOT NULL + DROP COLUMN) has never been executed against the real users/admin_users definitions on any engine. tests/unit/test_0004_encrypt_totp_secret.py builds a 3-column SQLite stand-in (id, totp_secret, is_active) with no indexes, unique constraints or enum columns, so the SQLite batch-recreate path is proven only on a table that does not resemble the real one; tests/unit/test_0003_align_shared_schema_with_models.py mocks op entirely and stubs the row fetch to empty, so no SQL runs; and tests/integration/test_totp_secret_migration.py is RUN_DB_TESTS=1-only and was not run (disclosed in the context pack). The 0001..0005 chain has therefore never run end-to-end on PostgreSQL, and the first real deploy is the first execution. Not a BLOCK: on PostgreSQL alembic batch mode emits in-place ALTERs rather than a table rebuild, the change is inside one transaction so a failure aborts cleanly, and the user accepted the single-release expand+contract with no production data.",
+      "fix": "Run tests/integration/test_totp_secret_migration.py with RUN_DB_TESTS=1 against a throwaway PostgreSQL (docker compose up -d db) before merge, and extend it to upgrade to head (0005) and back rather than stopping at 0004."
+    },
+    {
+      "id": "CR-A-004",
+      "severity": "WARN",
+      "file": "app/security/totp.py",
+      "line": 30,
+      "description": "verify_totp is now dead production code: the diff replaced its only production caller (app/routers/auth.py, previously `if not verify_totp(...)`) with matched_totp_step. Nothing under app/ imports it any more; the sole remaining reference is the harness in tests/validation/test_full_validation.py:136. Two overlapping code-verification paths now exist (pyotp.verify(valid_window=1) vs the hand-rolled -1/0/+1 loop with strings_equal). They agree on the window today, so a future change to one silently diverges from what the endpoint actually enforces.",
+      "fix": "Delete verify_totp from app/security/totp.py and point tests/validation/test_full_validation.py at matched_totp_step (truthiness of the returned step), so there is one definition of 'this code is valid now'."
+    },
+    {
+      "id": "CR-A-005",
+      "severity": "INFO",
+      "file": "app/routers/auth.py",
+      "line": 172,
+      "description": "The failure that creates the lock writes only auth.totp_failed. auth.totp_locked is written on subsequent attempts (auth.py:163), so if the attacker stops after the fifth bad code nothing in the audit log records that the account was locked for 15 minutes; an operator sees five failures and no lock event. AC3 does not require it, and tests/unit/test_auth.py::test_fifth_failure_locks_the_account_and_later_attempts_get_429 pins the current sequence, so this is an observability gap rather than an AC miss.",
+      "fix": "Have record_failure return whether it locked and emit auth.totp_locked from that branch in addition to auth.totp_failed."
+    },
+    {
+      "id": "CR-A-006",
+      "severity": "INFO",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 51,
+      "description": "The None branches of encrypt_secret/decrypt_secret are unreachable: totp_secret is NOT NULL from 0001 onward and 0004 makes totp_secret_encrypted NOT NULL, so no row can be NULL in either direction, and if one were, the following SET NOT NULL would abort the migration anyway. tests/unit/test_0004_encrypt_totp_secret.py::test_blank_and_null_secrets_stay_blank_both_ways is the only thing exercising them.",
+      "fix": "Either drop the None branches and the (None, None) parametrize case, or add a one-line comment that they are defensive against a future nullable source column."
+    },
+    {
+      "id": "CR-A-007",
+      "severity": "INFO",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 70,
+      "description": "rewrite_column returns the row count but no production caller reads it - _move discards the value. The return exists only so tests/unit/test_0004_encrypt_totp_secret.py::test_rewrite_column_visits_every_row_in_batches can assert count == 4, i.e. API surface added for a test.",
+      "fix": "Give it a production use (log the per-table count from _move so a deploy leaves evidence of how many rows were re-encrypted), or drop the return and assert on the rewritten rows only."
+    },
+    {
+      "id": "CR-A-008",
+      "severity": "INFO",
+      "file": "tests/unit/test_totp_secret_at_rest.py",
+      "line": 28,
+      "description": "test_totp_secret_is_no_longer_a_known_pii_violation asserts two tuples are absent from a set the same diff hardcoded to set(). The assertion cannot fail even if someone re-adds (\"users\", \"totp_secret\") as a plaintext column, because the exemption list would then be re-populated with a different entry or the test's specific tuples re-added - either way the useful protection comes from tests/unit/test_pii_policy.py's reflective check, not this one.",
+      "fix": "Assert KNOWN_VIOLATIONS == set() so any new exemption fails the test, and keep the reflective check as the column-level guard."
+    },
+    {
+      "id": "CR-A-009",
+      "severity": "INFO",
+      "file": "app/services/totp_lockout.py",
+      "line": 14,
+      "description": "lock_seconds_left compares user.totp_locked_until with a tz-aware now. Correct on the supported runtime (PostgreSQL timestamptz returns aware datetimes via asyncpg), but any engine that returns naive values for DateTime(timezone=True) - SQLite, which the repo already uses for migration unit tests - makes `until <= now` raise TypeError and turn a lockout check into a 500.",
+      "fix": "No change needed for PostgreSQL. If a SQLite dev/test mode is ever wired to the ORM, normalise first: `until = until.replace(tzinfo=timezone.utc) if until.tzinfo is None else until`."
+    },
+    {
+      "id": "CR-A-010",
+      "severity": "INFO",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 78,
+      "description": "Keyset paging starts at after = \"\" with `WHERE id > after`, so a row whose String(36) primary key is the empty string is never visited and keeps NULL in the new column; the subsequent SET NOT NULL then aborts the migration with a constraint error rather than a clear message. Implausible for uuid4 ids (and it fails safe, inside the transaction), but the sentinel silently excludes one legal key value.",
+      "fix": "Optional: page with `after: str | None = None` and omit the WHERE clause on the first iteration, or assert rewrite_column's returned count equals SELECT count(*) in _move so a skipped row is reported as such."
+    },
+    {
+      "id": "CRB-001",
+      "severity": "WARN",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/security/totp.py",
+      "line": 30,
+      "description": "verify_totp is now dead production code. matched_totp_step replaced it at the only production call site (app/routers/auth.py); the sole remaining reference is tests/validation/test_full_validation.py:135. verify_totp is not step-aware, so it silently skips the CHG-006 replay guard: a future caller that reaches for the obvious-looking helper reintroduces the R17 replay hole the branch just closed.",
+      "fix": "Delete verify_totp and point tests/validation/test_full_validation.py at matched_totp_step, or keep it with an explicit docstring warning that it bypasses the replay guard and must not be used on the verify path."
+    },
+    {
+      "id": "CRB-002",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "app/routers/auth.py",
+      "line": 158,
+      "description": "_check_totp_code has an asymmetric commit contract that nothing states: the failure branch commits the counter itself (line 170), while the success branch (record_success at line 175, which sets totp_failed_attempts/totp_locked_until/totp_last_used_step) relies on the caller committing afterwards. A second caller that forgets the commit would drop the replay step and the counter reset with no test failing, since only verify_totp_code is exercised.",
+      "fix": "Say so in the docstring ('failures commit; the caller must commit on success so totp_verified and the step land in one transaction'), or return a flag and let verify_totp_code own both commits."
+    },
+    {
+      "id": "CRB-003",
+      "severity": "WARN",
+      "confidence": "low",
+      "axis": "behaviour",
+      "file": "app/routers/auth.py",
+      "line": 168,
+      "description": "Unexercised failure path: app.security.encryption.decrypt raises InvalidToken on the b\"\" that app/compliance/deletion.py:86 writes for an anonymised user, so decrypt(user.totp_secret_encrypted) in _check_totp_code (line 168) and in _totp_setup_response (line 127) would surface as a 500 from main.py's global Exception handler rather than a 4xx. Migration 0004 deliberately handles the blank case (decrypt_secret returns \"\" for b\"\"); the application path does not. Today it is unreachable only by two incidental invariants: _anonymise rewrites email_hash so the callback lookup misses, and _pending_2fa_user rejects totp_verified users (anonymise requires a session, which requires verification). Neither invariant is pinned by a test.",
+      "fix": "Guard the verify path on a blank secret (treat b\"\" as 'no enrolment', 401/409, or check user.is_active in _pending_2fa_user) and add a test that an anonymised row cannot reach decrypt."
+    },
+    {
+      "id": "CRB-004",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 88,
+      "description": "The only executed proof of AC6/AC7 for a destructive column-drop migration is SQLite. On SQLite op.batch_alter_table recreates the table, so the unit test never exercises the PostgreSQL statements this migration actually emits (ALTER COLUMN ... SET NOT NULL, DROP COLUMN, bytea executemany with mixed b\"\"/ciphertext/NULL values). tests/integration/test_totp_secret_migration.py is written for exactly this but has never been run (context pack: 'Not run: PostgreSQL migration round trip'). Residual risk, not a defect I can reproduce.",
+      "fix": "Run tests/integration/test_totp_secret_migration.py with RUN_DB_TESTS=1 in the CI integration job (or against a throwaway Postgres container) and record the result before this reaches an environment holding real rows."
+    },
+    {
+      "id": "CRB-005",
       "severity": "INFO",
       "confidence": "high",
-      "axis": "behaviour",
-      "file": "app/routers/onboarding.py",
-      "line": 147,
-      "description": "Assessment of the registry perf-smell BLOCK (5x PERF-N1-LOOP-QUERY at 147/169/259/277/306): false positive. get_tenant_db (app/database.py:90-96) is a single-yield async generator, so `async for tenant_db in get_tenant_db(schema)` runs exactly one iteration - it is the dependency-generator-as-context-manager idiom, not a per-row query loop. Exhausting the generator also runs its finally, so the session is closed; there is no leak. All five lines are pre-existing and untouched by this range (the diff changed only lines 94-100).",
-      "message": "perf-smell PERF-N1-LOOP-QUERY findings on onboarding.py are false positives on pre-existing lines.",
-      "fix": "No code change. Suppress or teach the perf sensor to ignore `async for x in <single-yield dependency generator>`."
+      "axis": "maintainability",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 56,
+      "description": "The None branches of encrypt_secret/decrypt_secret are unreachable against the real schema: users.totp_secret and admin_users.totp_secret are NOT NULL from 0001 and neither 0002 nor 0003 relaxes that. test_blank_and_null_secrets_stay_blank_both_ways pins behaviour the schema cannot produce, and if a NULL ever did appear the subsequent SET NOT NULL would fail mid-migration rather than being handled.",
+      "fix": "Leave as defensive code, or drop the None branch and let the migration fail loudly on an unexpected NULL."
+    },
+    {
+      "id": "CRB-006",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/security/totp.py",
+      "line": 36,
+      "description": "The 90-second acceptance window is now expressed twice in one file: valid_window=1 in verify_totp (line 33) and the literal (-1, 0, 1) tuple in matched_totp_step (line 39). If one is ever tuned the other will drift.",
+      "fix": "Hoist the window to a module constant (e.g. TOTP_WINDOW_STEPS = 1) and derive both from it — or moot it by removing verify_totp per CRB-001."
+    },
+    {
+      "id": "CRB-007",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/services/totp_lockout.py",
+      "line": 27,
+      "description": "record_failure never clears an expired totp_locked_until; only record_success does. After a lock lapses the column keeps a past timestamp, so the row cannot be read as 'locked' vs 'was locked once' without comparing to now(). Behaviourally correct (lock_seconds_left treats past as unlocked) but makes the column ambiguous for support queries and future admin UI.",
+      "fix": "Set user.totp_locked_until = None on the first failure recorded after the lock has lapsed, or document that the column is a deadline, not a state flag."
+    },
+    {
+      "id": "CRB-008",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "app/config.py",
+      "line": 89,
+      "description": "totp_max_failures and totp_lockout_minutes have no lower bound. TOTP_MAX_FAILURES=0 locks an account on the very first bad code (record_failure increments to 1 and 1 >= 0), and a negative value does the same — a misconfiguration self-DoS. Consistent with the rest of Settings (jwt_expiry_hours is unconstrained too), so noted rather than blocked.",
+      "fix": "Constrain with Field(5, ge=1) / Field(15, ge=1) if the project starts validating settings."
+    },
+    {
+      "id": "CRB-009",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/integration/test_totp_secret_migration.py",
+      "line": 35,
+      "description": "_alembic and the create_async_engine/dispose helper duplicate tests/integration/test_shared_migrations.py:25 and :50 near-verbatim. Trivial glue, but it is the second copy and a third is likely with the next migration.",
+      "fix": "Move _alembic and the engine helper into a shared integration conftest fixture and import it in both modules."
+    },
+    {
+      "id": "CRB-010",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 12,
+      "description": "The docstring's 'keyset-paged in batches of BATCH_SIZE' can be read as lock relief, but every batch runs inside the migration's single transaction and is followed by SET NOT NULL, which takes ACCESS EXCLUSIVE over the whole table. The batching bounds result-set memory only.",
+      "fix": "Reword to 'bounded result sets (one transaction; the table is exclusively locked for the whole migration)' so a future operator does not assume an online migration."
     }
   ]
 }

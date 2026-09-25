@@ -83,7 +83,7 @@ async def _anonymise(user: User, db: AsyncSession) -> dict:
     # Nullify PII on user row
     user.email_encrypted = b""
     user.email_hash = f"anonymised_{user.id}"
-    user.totp_secret = ""
+    user.totp_secret_encrypted = b""
     user.oauth_sub = ""
     user.is_active = False
     await db.commit()

@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 8
     totp_issuer: str = "jH_ANS"
+    totp_max_failures: int = 5  # consecutive bad codes before lockout (CHG-006)
+    totp_lockout_minutes: int = 15
 
     @property
     def allowed_ip_list(self) -> List[str]:

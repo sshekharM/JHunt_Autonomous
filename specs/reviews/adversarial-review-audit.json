@@ -19,8 +19,8 @@
   "merged_pass": true,
   "merged_summary": {
     "block": 0,
-    "warn": 3,
-    "info": 11
+    "warn": 0,
+    "info": 20
   },
   "timeouts": []
 }

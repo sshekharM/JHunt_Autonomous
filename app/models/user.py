@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, DateTime, Enum as SAEnum, LargeBinary, UniqueConstraint
+from sqlalchemy import String, Boolean, BigInteger, DateTime, Enum as SAEnum, Integer, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import enum
@@ -47,8 +47,15 @@ class User(Base):
     oauth_sub: Mapped[str] = mapped_column(String(256))
 
     # 2FA — mandatory TOTP
-    totp_secret: Mapped[str] = mapped_column(String(64))
+    # Fernet-encrypted (CHG-005); b"" once the user is anonymised
+    totp_secret_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
     totp_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Per-account lockout and replay guard (CHG-006, migration 0005)
+    totp_failed_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    totp_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    totp_last_used_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # State
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

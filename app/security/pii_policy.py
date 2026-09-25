@@ -54,10 +54,7 @@ PLAINTEXT_EXCEPTIONS = {
 }
 
 # Plaintext PII awaiting a fix. Listed so they cannot spread; remove when fixed.
-KNOWN_VIOLATIONS = {
-    ("users", "totp_secret"),
-    ("admin_users", "totp_secret"),
-}
+KNOWN_VIOLATIONS: set[tuple[str, str]] = set()
 
 
 def _is_protected(column: str) -> bool:

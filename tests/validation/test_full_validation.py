@@ -132,9 +132,12 @@ class TestTOTP:
     """TOTP: generate secret, verify valid/expired/wrong codes."""
 
     def setup_method(self):
-        from app.security.totp import generate_totp_secret, verify_totp
+        from datetime import datetime, timezone
+
+        from app.security.totp import generate_totp_secret, matched_totp_step
         self.generate = generate_totp_secret
-        self.verify = verify_totp
+        self.verify = lambda secret, code: matched_totp_step(
+            secret, code, datetime.now(timezone.utc)) is not None
 
     def test_generate_returns_string(self):
         secret = self.generate()
@@ -776,7 +779,7 @@ class TestDeletionModes:
         user.is_active = True
         user.email_encrypted = b"encrypted_data"
         user.email_hash = "hash123"
-        user.totp_secret = "TOTP_SECRET"
+        user.totp_secret_encrypted = b"TOTP_SECRET"
         user.oauth_sub = "oauth123"
         return user
 

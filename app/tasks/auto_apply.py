@@ -2,17 +2,31 @@
 Celery tasks for autonomous job application.
 """
 import asyncio
-from datetime import datetime, date, timezone
-from app.services import notification_service
+from datetime import date, datetime, timezone
 
 import structlog
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
+from app.compliance import consent_store
+from app.compliance.dpdpa import ConsentRecord
 from app.database import AsyncSessionLocal, get_tenant_db
 from app.models.user import User
+from app.security.audit_log import audit
+from app.services import notification_service
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.auto_apply")
+# Consents an automated, LLM-tailored application needs (CHG-007)
+_LLM_APPLY_SCOPES = ("auto_apply", "llm_processing")
+
+
+def _consent_refused(user_id: str, consent: ConsentRecord | None, scope: str) -> bool:
+    """True, logged and audited, when the user's current consent does not cover `scope` (CHG-007)."""
+    if consent_store.consent_allows(consent, scope):
+        return False
+    logger.info("auto_apply.consent_refused", user_id=user_id, scope=scope)
+    audit("consent.enforced", user_id=user_id, details={"scope": scope, "task": "auto_apply"})
+    return True
 
 
 def _run(coro):
@@ -55,14 +69,20 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
          - Auto mode → tailored resume + cover letter → apply_to_job
     """
     async def _inner():
-        from app.tenant_models.profile import UserPreferences
-        from app.tenant_models.job import MatchedJob
-        from app.tenant_models.application import JobApplication, ApplicationStatus
-        from app.services import resume_service, cover_letter_service, application_service
         from app.security.encryption import decrypt
+        from app.services import (
+            application_service,
+            cover_letter_service,
+            resume_service,
+        )
+        from app.tenant_models.application import ApplicationStatus, JobApplication
+        from app.tenant_models.job import MatchedJob
+        from app.tenant_models.profile import UserPreferences
 
         async with AsyncSessionLocal() as shared_db:
-            # Tenant session
+            consent = await consent_store.current_consent(user_id, shared_db)
+            if _consent_refused(user_id, consent, "auto_apply"):
+                return
             async for tenant_db in get_tenant_db(schema_name):
                 # Load preferences
                 pref_result = await tenant_db.execute(select(UserPreferences))
@@ -73,6 +93,9 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
 
                 if not prefs.auto_apply_enabled:
                     logger.info("auto_apply.disabled", user_id=user_id)
+                    return
+                # Only the non-HITL path tailors resumes / cover letters with an LLM.
+                if not prefs.hitl_enabled and _consent_refused(user_id, consent, "llm_processing"):
                     return
 
                 # Check pause
@@ -168,6 +191,10 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
 
                         if master_resume is None:
                             logger.warning("auto_apply.no_master_resume", user_id=user_id)
+                            break
+                        # Re-read: a withdrawal during this run must stop the rest of it.
+                        consent = await consent_store.current_consent(user_id, shared_db)
+                        if any(_consent_refused(user_id, consent, s) for s in _LLM_APPLY_SCOPES):
                             break
 
                         # Parse master resume text

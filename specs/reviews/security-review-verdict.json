@@ -1,136 +1,113 @@
 {
   "gate": "security",
-  "scope": {
-    "branch": "fix/auth-bypass",
-    "range": "53a8844..HEAD",
-    "stories": ["CHG-003", "CHG-004"],
-    "risks": ["R17", "R18"],
-    "files_reviewed": [
-      "app/routers/auth.py",
-      "app/services/auth_service.py",
-      "app/dependencies.py",
-      "app/routers/notifications.py",
-      "app/security/totp.py",
-      "app/security/rate_limiter.py",
-      "app/config.py",
-      "app/main.py",
-      "nginx/nginx.conf"
-    ]
-  },
+  "story": "CHG-007",
+  "diff": "ea5e664..HEAD",
+  "date": "2026-09-25",
   "verdict": "PASS",
   "pass": true,
   "block_severities": ["critical", "high"],
-  "summary": { "block": 0, "warn": 1, "info": 9 },
+  "summary": { "block": 0, "warn": 4, "info": 5 },
   "findings": [
     {
-      "id": "SEC-R17-01",
+      "id": "SEC-001",
       "severity": "WARN",
       "level": "WARN",
-      "category": "authentication",
-      "file": "app/routers/auth.py",
-      "line": 150,
-      "description": "The pending_2fa step-up token is not single-use and cannot be revoked server-side. delete_cookie only clears the browser copy; the signed JWT stays valid for the remainder of its 10-minute TTL, and verify_totp_code does not refuse a user whose totp_verified is already True. Anyone holding a copy of the token value plus a current TOTP code can therefore re-run the endpoint and mint another 8-hour access_token without a fresh OAuth login. Exploitation requires possession of the HttpOnly/Secure/path-scoped cookie value, so this is a hardening gap rather than a directly reachable bypass. The endpoint also does not check user.is_active before issuing the session (get_current_user does, so the resulting session is unusable for REST).",
-      "fix": "Make the step-up token single-use: add a jti claim and record consumed jtis in Redis for the token TTL (or store the pending session id on the user row and clear it on success), and reject the request with 401 when user.totp_verified is already True or user.is_active is False."
+      "category": "authorization/enforcement-completeness",
+      "file": "app/routers/onboarding.py",
+      "line": 295,
+      "issue": "POST /api/onboarding/step/9 (step9_consent) is reachable by any authenticated user at any time - it does not check onboarding_step or onboarding_complete - and calls record_consent(), which appends a new row with event defaulting to 'granted' and the flags taken from the request body. Because current_consent()/consent_allows() read the latest row, replaying step 9 after a withdrawal silently re-grants auto_apply and llm_processing and re-enables the gates added in app/tasks/auto_apply.py. Withdrawing data_processing deactivates the user so that path self-closes, but auto_apply-only and llm_processing-only withdrawals are fully reversible through this untouched endpoint, with no 'regrant after withdrawal' audit event. The story lists re-grant as out of scope, but the bypass itself is unguarded. Not a BLOCK: the only actor is the user's own session (SameSite=lax + origin-restricted CORS rule out a cross-site trigger).",
+      "fix": "Reject step 9 when user.onboarding_complete is true (409), or route re-grant through an explicit endpoint that writes event='granted' after a withdrawal and audits 'consent.regranted' with the scopes."
     },
     {
-      "id": "SEC-R18-01",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "authorization",
-      "file": "app/routers/notifications.py",
-      "line": 43,
-      "description": "The WebSocket handshake trusts the signed session token alone: unlike get_current_user it does not reload the User row, so it never checks is_active or totp_verified. A user deactivated mid-session keeps a live notification stream until the 8-hour token expires. Impact is limited to that user's own notifications. CHG-004 records this as an accepted out-of-scope decision.",
-      "fix": "Load the user in the handshake (or maintain a session denylist checked on connect and on push) so deactivation revokes the socket, and drop the user's registry entries when the account is deactivated."
+      "id": "SEC-002",
+      "severity": "WARN",
+      "level": "WARN",
+      "category": "race-condition/TOCTOU",
+      "file": "app/tasks/auto_apply.py",
+      "line": 81,
+      "issue": "apply_matched_jobs reads the consent record once, before the tenant loop, and reuses that snapshot for the whole run (auto_apply gate at line 82, llm_processing gate at line 96). A withdrawal committed after the snapshot does not stop the in-flight run, which can keep tailoring resumes, calling the LLM provider and submitting portal applications up to the daily cap. DPDP Act s.6(4) requires processing under withdrawn consent to stop; enforcement here is only effective from the next task run.",
+      "fix": "Re-read consent (or re-check consent_allows against a freshly loaded record) inside the per-job loop before each LLM call and before each apply_to_job, and abort the loop when the scope is no longer allowed."
     },
     {
-      "id": "SEC-R18-02",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "csrf",
-      "file": "app/routers/notifications.py",
-      "line": 41,
-      "description": "The handshake performs no Origin/Host validation, so cross-site WebSocket hijacking is prevented solely by the access_token cookie being SameSite=Lax (browsers do not attach Lax cookies to cross-site WebSocket handshakes). The mitigation is real and enabled on both cookie-setting paths, so this is defence-in-depth only. Documented as out of scope in CHG-004.",
-      "fix": "Reject handshakes whose Origin header is absent or not in an allowlist (settings.frontend_url / app_base_url) before accept()."
+      "id": "SEC-003",
+      "severity": "WARN",
+      "level": "WARN",
+      "category": "fail-open/atomicity",
+      "file": "app/services/consent_service.py",
+      "line": 45,
+      "issue": "Withdrawing data_processing is enforced only indirectly: consent_store.withdraw_consent commits the consent row first, then execute_deletion(soft_delete) separately sets users.is_active=False, and it is that flag - not a consent check - that stops match_jobs.py:123, ml_retrain.py:117 and status_check.py:46 from processing the user's data. The two commits are not atomic, so if disable_auto_apply or execute_deletion raises (tenant schema unavailable, DB error), the request returns 500 with consent already withdrawn while those tasks keep processing the user. No processing path other than auto_apply consults consent_allows(record, 'data_processing').",
+      "fix": "Add an explicit consent_allows(..., 'data_processing') check at the head of match_jobs, ml_retrain and status_check per-user work, and/or make withdrawal + side effects one transaction (or a retried outbox) so a partial failure cannot leave processing enabled after a recorded withdrawal."
     },
     {
-      "id": "SEC-R17-02",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "sensitive-data-exposure",
-      "file": "app/routers/auth.py",
-      "line": 146,
-      "description": "code is declared as a bare str, so FastAPI reads it as a query parameter: the TOTP code travels in the request URL and lands in nginx access logs, uvicorn logs and any intermediary. The code alone is now useless without the pending_2fa cookie, which keeps the impact low, but a short-lived authentication factor should not be logged.",
-      "fix": "Accept the code in a Pydantic request body model (e.g. TotpVerifyRequest) instead of a query parameter."
+      "id": "SEC-004",
+      "severity": "WARN",
+      "level": "WARN",
+      "category": "input-validation/PII-in-logs",
+      "file": "app/routers/consent.py",
+      "line": 55,
+      "issue": "The raw User-Agent header is passed through unbounded to ConsentRecord.user_agent, which is String(512) (app/compliance/dpdpa.py:25). A request with a longer UA makes the INSERT fail on PostgreSQL; the DataError propagates to the global handler in app/main.py, which logs error=str(exc) plus the stack trace at ERROR level - and the SQLAlchemy exception string carries the bound parameters, i.e. the ip_address and user_agent, because the engine in app/database.py is created without hide_parameters=True. So a client-controlled input both breaks a compliance action (500 instead of a recorded withdrawal) and puts the IP/UA into the log stream that AC4 deliberately keeps them out of. Same untruncated pattern exists in record_consent (pre-existing).",
+      "fix": "Truncate/validate in the router or in _withdrawal_row (user_agent[:512], ip_address[:45]) before constructing the row, and set hide_parameters=True on the engine (or scrub parameters in the global exception handler)."
     },
     {
-      "id": "SEC-R17-03",
+      "id": "SEC-005",
       "severity": "INFO",
       "level": "INFO",
-      "category": "authentication",
-      "file": "app/routers/auth.py",
-      "line": 143,
-      "description": "TOTP verification has no per-account throttling or lockout: the 10/minute limit is keyed on the remote address (slowapi get_remote_address), and verify_totp uses valid_window=1 with no used-code cache, so a code is replayable for roughly 90 seconds. Guessing another user's code is not reachable because the endpoint now requires that user's pending_2fa cookie, so this is residual hardening.",
-      "fix": "Add a per-user attempt counter with lockout in Redis, and record consumed (user_id, code) pairs for the validity window to prevent replay."
+      "category": "data-integrity",
+      "file": "app/compliance/consent_store.py",
+      "line": 81,
+      "issue": "'Current consent' is defined by ORDER BY consented_at with no tiebreaker, and it is implemented twice: DESC LIMIT 1 here and history[-1] in app/routers/consent.py:33. consented_at is generated in Python (datetime.now), so a grant and a withdrawal written in the same microsecond, or a clock step on a multi-instance deployment, makes the winner undefined - and the losing case is fail-open (a stale 'granted' row shadows a withdrawal). The FOR UPDATE lock at line 129 serialises withdrawals against each other but not against record_consent, which takes no lock.",
+      "fix": "Add a monotonic tiebreaker (a BIGSERIAL sequence column, or ORDER BY consented_at DESC, id DESC) used by both readers, use a DB-side timestamp default, and take the same users-row lock in record_consent."
     },
     {
-      "id": "SEC-ADM-01",
+      "id": "SEC-006",
       "severity": "INFO",
       "level": "INFO",
-      "category": "authentication",
-      "file": "app/dependencies.py",
-      "line": 38,
-      "description": "get_current_admin was not hardened alongside session_user_id: it decodes the token and only requires an admin_sub claim, without rejecting purpose-bound JWTs. Not exploitable today - pending_2fa tokens carry only sub and purpose, and no code path anywhere in app/ ever issues a token containing admin_sub (admin login is unimplemented), so the admin dependency is currently unreachable. The inconsistency becomes a token-confusion risk as soon as admin login is added.",
-      "fix": "Route admin tokens through a shared helper that rejects any token carrying a purpose claim, mirroring session_user_id."
+      "category": "authentication/rate-limiting",
+      "file": "app/routers/consent.py",
+      "line": 45,
+      "issue": "POST /api/consent/withdraw is destructive (withdrawing data_processing deactivates the account and there is no re-grant path for it) but has no @limiter.limit and no step-up re-authentication, unlike the auth routes (app/routers/auth.py:30, :194). Refuted as a BLOCK: an attacker holding the session cookie can already call DELETE /api/applications/account with mode=hard_delete (pre-existing, strictly worse), so the new endpoint grants no additional capability, and SameSite=lax plus origin-restricted CORS prevent a cross-site trigger.",
+      "fix": "Apply a modest rate limit and require a fresh TOTP/password confirmation for scopes whose effect is irreversible (data_processing), ideally for DELETE /api/applications/account at the same time."
     },
     {
-      "id": "SEC-OAUTH-01",
+      "id": "SEC-007",
       "severity": "INFO",
       "level": "INFO",
-      "category": "authentication",
-      "file": "app/routers/auth.py",
-      "line": 78,
-      "description": "Pre-existing, untouched by this diff: the OAuth callback matches an existing account by email_hash only and never compares oauth_provider/oauth_sub. A provider that returns an attacker-controlled or unverified email address would let the attacker log in as an existing account created through a different provider. Noted here because it is the remaining unauthenticated-to-session path in this flow, not a regression from CHG-003.",
-      "fix": "Verify the email is provider-verified and bind the login to the stored (oauth_provider, oauth_sub) pair, requiring an explicit account-linking step for a new provider."
+      "category": "api-contract",
+      "file": "app/schemas/consent.py",
+      "line": 36,
+      "issue": "WithdrawConsentResponse.account_deletion is typed dict[str, Any] and returns execute_deletion's internal summary verbatim. Today soft_delete returns only mode/message/hard_delete_after (no PII), but the same function's other modes return schema_dropped (the tenant schema name) and removed/retained field lists, so any future change to the deletion summary leaks straight through the API with no schema review.",
+      "fix": "Declare an explicit AccountDeletionSummary model with the three soft-delete fields and map into it, so the response surface cannot widen implicitly."
     },
     {
-      "id": "SEC-DEPLOY-01",
+      "id": "SEC-008",
       "severity": "INFO",
       "level": "INFO",
-      "category": "configuration",
-      "file": "nginx/nginx.conf",
-      "line": 70,
-      "description": "Pre-existing deployment mismatch: nginx only sets proxy_http_version 1.1 and the Upgrade/Connection headers under location /ws/, but the route is /api/notifications/ws/{user_id}, which matches location /api/ and is proxied without the upgrade headers. Behind the shipped proxy the WebSocket cannot complete its handshake, so the new R18 auth check has never run in a proxied deployment. Not a vulnerability, but it means the control is unverified end-to-end.",
-      "fix": "Add the upgrade headers to a location that matches the real path (for example location /api/notifications/ws/) or move the endpoint under /ws/."
+      "category": "security-headers/CSRF",
+      "file": "app/main.py",
+      "line": 50,
+      "issue": "The app installs only SessionMiddleware and CORSMiddleware - no Content-Security-Policy, X-Frame-Options or X-Content-Type-Options - and CSRF protection for the new cookie-authenticated POST relies entirely on the access_token cookie being SameSite=lax (app/routers/auth.py:118). That is a real mitigation for cross-site POST, so no CSRF finding is raised, but it is the only layer; a future switch to SameSite=none or a token in a header would silently expose /api/consent/withdraw.",
+      "fix": "Add a security-headers middleware and, for state-changing routes, a double-submit CSRF token or an Origin/Sec-Fetch-Site check as defence in depth."
     },
     {
-      "id": "SEC-DEP-01",
+      "id": "SEC-009",
       "severity": "INFO",
       "level": "INFO",
-      "category": "dependency",
-      "file": "requirements.txt",
-      "line": 18,
-      "description": "Not in the change set (no manifest was modified, so no audit was run), but noted because the new tokens depend on it: python-jose 3.3.0 carries CVE-2024-33663 (algorithm confusion) and CVE-2024-33664 (JWE decompression DoS). Neither applies to this code path - tokens are HS256 with a symmetric secret and decode pins algorithms=[settings.jwt_algorithm], and no JWE is consumed.",
-      "fix": "Track an upgrade to a patched JWT library (python-jose >= 3.4 or PyJWT) in dependency maintenance."
-    },
-    {
-      "id": "SEC-POLICY-01",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "authentication",
-      "file": "app/routers/auth.py",
-      "line": 105,
-      "description": "Explicitly out of scope and not blocking, recorded for the product decision: TOTP is enrolment-only. Once totp_verified is True, the OAuth callback issues an 8-hour session with no second factor, so the system provides 2FA at registration rather than at each login. CHG-003 states this policy is unchanged and pending a product decision.",
-      "fix": "Product decision: if step-up at each login is wanted, route verified users through the same pending_2fa flow and require a code before issuing access_token."
+      "category": "data-retention",
+      "file": "app/compliance/deletion.py",
+      "line": 49,
+      "issue": "Acknowledged pre-existing gap, re-confirmed as now reachable from the new endpoint: _soft_delete only sets is_active=False and audits a 30-day deadline - it never writes users.scheduled_deletion_at and no job purges accounts afterwards. A user who withdraws data_processing is told 'Permanent deletion scheduled in 30 days' in the API response while nothing will actually erase the data. deletion.py is out of scope for this change (R12) and was correctly left untouched.",
+      "fix": "Out of scope here; track as a follow-up story - persist the deadline and add a purge task, or soften the response message so it does not promise a deletion that no job performs."
     }
   ],
-  "verified_controls": [
-    "Pending token forgery: create/decode use HS256 with settings.app_secret_key (required env var, no default or hardcoded fallback) and decode pins algorithms=[jwt_algorithm], so alg=none/confusion is not possible; python-jose verifies exp by default and ExpiredSignatureError maps to 401.",
-    "Cross-purpose replay is blocked in both directions: session_user_id rejects any token carrying a purpose claim (used by get_current_user and the WebSocket), and decode_pending_2fa_token requires purpose == 'totp_setup', so a plain access_token is rejected at /totp/verify.",
-    "No remaining unauthenticated session issuance: create_access_token has exactly two call sites, both gated - after authorize_access_token in the OAuth callback, and after decode_pending_2fa_token plus verify_totp in /totp/verify. The callback's totp_setup branch sets no access_token cookie.",
-    "Cookie attributes: pending_2fa is HttpOnly, Secure, SameSite=Lax, Max-Age=600, scoped to /api/auth/totp; delete_cookie uses the same key/path/attrs and Starlette 0.37.2 accepts those kwargs, so the clear matches the set and the cookie is not sent to any other route.",
-    "CSRF on POST /api/auth/totp/verify: SameSite=Lax withholds pending_2fa on cross-site POSTs, so a forged submission gets 401; CORS is restricted to settings.frontend_url so the response is unreadable cross-origin. A successful forgery would also require a valid TOTP code.",
-    "Admin token confusion: pending_2fa tokens carry no admin_sub, user session tokens carry no admin_sub, and nothing in app/ issues admin tokens, so neither token type satisfies get_current_admin.",
-    "WebSocket close-before-accept: Starlette permits websocket.close in the CONNECTING state, so the handshake is denied before accept() and the socket is never added to _connections; the identity check is an exact string comparison of the token sub against the path user_id, and a missing/invalid/purpose-bound token yields None which never equals a path segment.",
-    "WebSocket cleanup: _unregister is membership-guarded and pops empty entries, and the finally block cannot raise KeyError/ValueError; push_to_user iterates a copy and logs failures instead of swallowing them."
+  "refuted_candidates": [
+    "Missing/weak authz on GET /api/consent and POST /api/consent/withdraw - refuted: both depend on get_current_user (app/dependencies.py:11), which requires the access_token cookie, an existing active user and totp_verified; neither endpoint accepts a client-supplied user id, so there is no IDOR surface.",
+    "SQL/identifier injection via schema_name in consent_service.disable_auto_apply - refuted: get_tenant_db -> tenant_session -> validate_schema_name enforces ^u_[0-9a-f]{32}$ before any SET search_path (app/database.py:15).",
+    "IP/User-Agent leakage in responses or audit trail - refuted on the normal path: audit('consent.withdrawn') carries only user_id and scope names (consent_store.py:140), ConsentView/ConsentEntry expose event, flags and timestamp only, and the auto_apply logs carry user_id plus scope. Leakage exists only on the DB-error path, filed as SEC-004.",
+    "Fail-open consent gate - refuted: consent_allows returns False for a missing record and additionally requires consented_to_data_processing (consent_store.py:96); a DB failure in current_consent propagates and the Celery task retries rather than proceeding.",
+    "LLM processing after withdrawal - refuted for all executed paths: the only call sites that ship user data to a provider are resume_service.generate_tailored_resume (auto_apply.py:211) and cover_letter_service.generate_cover_letter (auto_apply.py:244), both inside the non-HITL branch behind the gate at line 96; the HITL branch queues and continues without any LLM call; naukri._answer_screening_questions is string matching against the profile, not an LLM; screening_service.answer_screening_question has no caller.",
+    "Race allowing a stale 'granted' flag to be copied back into a withdrawal row - refuted for concurrent withdrawals: withdraw_consent takes SELECT users.id ... FOR UPDATE (consent_store.py:129) in the same transaction before reading the latest record, so two concurrent withdrawals serialise. The unlocked grant path is filed as SEC-005.",
+    "Input validation on the withdraw body - refuted: WithdrawConsentRequest uses Literal scopes, min_length=1 and extra='forbid' (422), NoConsentOnRecord maps to 409, and consent_store._checked_scopes re-validates in the service layer.",
+    "CSRF on POST /api/consent/withdraw - refuted: the access_token cookie is HttpOnly/Secure/SameSite=lax, which is not sent on cross-site POST, and CORS allow_origins is limited to settings.frontend_url.",
+    "Hardcoded secrets / injection / unsafe deserialisation in the diff - none: no credentials, no raw SQL (migration 0006 is static DDL), no pickle/yaml, no dependency manifest changed (so no audit step was required)."
   ]
 }
