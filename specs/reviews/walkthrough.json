@@ -1,0 +1,314 @@
+{
+  "gate": "pr-walkthrough",
+  "generated_at": "2026-09-24T05:18:17.848Z",
+  "base": "7c1cc13",
+  "file_count": 30,
+  "groups": [
+    {
+      "layer": "config",
+      "title": "6. Config & infrastructure",
+      "files": [
+        {
+          "path": ".env.example",
+          "findings": []
+        },
+        {
+          "path": "app/config.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/admin/config.py",
+          "findings": [
+            {
+              "id": "CR-006",
+              "level": "INFO",
+              "confidence": "high",
+              "axis": "maintainability",
+              "summary": "Router-level allowlist dependency duplicated in six files."
+            }
+          ]
+        },
+        {
+          "path": "docker-compose.prod.yml",
+          "findings": [
+            {
+              "id": "CR-003",
+              "level": "WARN",
+              "confidence": "high",
+              "axis": "maintainability",
+              "summary": "The nginx trust IP is a magic constant duplicated across two compose keys with no check that they agree."
+            },
+            {
+              "id": "CR-005",
+              "level": "INFO",
+              "confidence": "medium",
+              "axis": "behaviour",
+              "summary": "Static ipv4_address 172.28.0.10 sits inside the dynamic allocation pool."
+            }
+          ]
+        },
+        {
+          "path": "docker-compose.yml",
+          "findings": [
+            {
+              "id": "CR-004",
+              "level": "WARN",
+              "confidence": "medium",
+              "axis": "behaviour",
+              "summary": "Compose fallback ${APP_ENV:-development} can silently override a production env_file value on the installer's deployment path."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "layer": "test",
+      "title": "7. Tests",
+      "files": [
+        {
+          "path": "tests/unit/test_admin_config_ops.py",
+          "findings": []
+        },
+        {
+          "path": "tests/unit/test_config.py",
+          "findings": [
+            {
+              "id": "CR-008",
+              "level": "INFO",
+              "confidence": "high",
+              "axis": "maintainability",
+              "summary": "Rejection test does not assert which field failed validation."
+            }
+          ]
+        },
+        {
+          "path": "tests/unit/test_consent_store.py",
+          "findings": []
+        },
+        {
+          "path": "tests/unit/test_ip_allowlist.py",
+          "findings": []
+        },
+        {
+          "path": "tests/unit/test_onboarding.py",
+          "findings": [
+            {
+              "id": "CR-009",
+              "level": "INFO",
+              "confidence": "medium",
+              "axis": "maintainability",
+              "summary": "Characterization test asserts internal statement count."
+            }
+          ]
+        },
+        {
+          "path": "tests/unit/test_pii_policy.py",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "layer": "docs",
+      "title": "8. Docs & specs",
+      "files": [
+        {
+          "path": "specs/reviews/adversarial-review-audit.json",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/code-review-verdict-a.json",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/code-review-verdict-b.json",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/code-review-verdict.json",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/code-review.md",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/gate-checks.json",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/local-regression-gate-verdict.json",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/review-context-pack.md",
+          "findings": []
+        },
+        {
+          "path": "specs/reviews/security-review-verdict.json",
+          "findings": []
+        },
+        {
+          "path": "specs/stories/CHG-002-admin-ip-allowlist.md",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "layer": "other",
+      "title": "9. Other",
+      "files": [
+        {
+          "path": "app/compliance/consent_store.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/admin/crawls.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/admin/ops.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/admin/portals.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/admin/taxonomy.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/admin/users.py",
+          "findings": []
+        },
+        {
+          "path": "app/routers/onboarding.py",
+          "findings": [
+            {
+              "id": "CR-010",
+              "level": "INFO",
+              "confidence": "high",
+              "axis": "behaviour",
+              "summary": "perf-smell PERF-N1-LOOP-QUERY findings on onboarding.py are false positives on pre-existing lines."
+            }
+          ]
+        },
+        {
+          "path": "app/security/ip_allowlist.py",
+          "findings": [
+            {
+              "id": "CR-007",
+              "level": "INFO",
+              "confidence": "high",
+              "axis": "behaviour",
+              "summary": "Denied admin attempts are not audited."
+            }
+          ]
+        },
+        {
+          "path": "app/security/pii_policy.py",
+          "findings": [
+            {
+              "id": "CR-001",
+              "level": "WARN",
+              "confidence": "medium",
+              "axis": "behaviour",
+              "summary": "consent_records.user_agent escapes the PII policy while the sibling ip_address needs a reviewed exception."
+            },
+            {
+              "id": "CR-002",
+              "level": "WARN",
+              "confidence": "medium",
+              "axis": "behaviour",
+              "summary": "PII token list misses token/otp/ssn/passport and date_of_birth, so those columns would pass the R6 gate in plaintext."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "review_summary": {
+    "block": 0,
+    "warn": 4,
+    "info": 6
+  },
+  "review_pass": true,
+  "blast_radius": {
+    "callers": [
+      "alembic/env.py",
+      "app/crawlers/glassdoor.py",
+      "app/crawlers/indeed.py",
+      "app/crawlers/linkedin.py",
+      "app/crawlers/monster.py",
+      "app/crawlers/naukri.py",
+      "app/crawlers/session_manager.py",
+      "app/crawlers/shine.py",
+      "app/database.py",
+      "app/llm/anthropic_client.py",
+      "app/llm/ollama_client.py",
+      "app/main.py",
+      "app/notifications/discord_bot.py",
+      "app/notifications/email_client.py",
+      "app/notifications/telegram_bot.py",
+      "app/security/encryption.py",
+      "app/security/totp.py",
+      "app/services/auth_service.py",
+      "app/services/resume_service.py",
+      "app/services/storage_service.py"
+    ],
+    "callees": [
+      "datetime",
+      "hashlib",
+      "sqlalchemy.ext.asyncio",
+      "app/compliance/dpdpa.py",
+      "pydantic_settings",
+      "pydantic",
+      "typing",
+      "fastapi",
+      "app/models/admin.py",
+      "app/dependencies.py",
+      "app/security/audit_log.py",
+      "app/tasks/crawl_jobs.py",
+      "sqlalchemy",
+      "app/database.py",
+      "app/models/user.py",
+      "app/models/portal_account.py",
+      "app/tenant_models/profile.py",
+      "app/tenant_models/skill.py",
+      "app/tenant_models/resume.py",
+      "app/security/encryption.py"
+    ]
+  },
+  "stories": [],
+  "intent": "# Review Context Pack — /gate fix/admin-ip-allowlist - **Branch:** fix/admin-ip-allowlist - **Range:** `7c1cc13..9e364c2` (commits ca539f1..9e364c2) - **Story/risks:** CHG-002 (`specs/stories/CHG-002-admin-ip-allowlist.md`), risk-map items R5, R6, R9, R11, R16 (`specs/brownfield/risk-map.md`) ## Commits | SHA | Summary | |-----|---------| | ca539f1 | fix(security): enforce ALLOWED_IPS on every adm",
+  "high_signal": [
+    {
+      "id": "CR-001",
+      "level": "WARN",
+      "confidence": "medium",
+      "file": "app/security/pii_policy.py",
+      "summary": "consent_records.user_agent escapes the PII policy while the sibling ip_address needs a reviewed exception."
+    },
+    {
+      "id": "CR-002",
+      "level": "WARN",
+      "confidence": "medium",
+      "file": "app/security/pii_policy.py",
+      "summary": "PII token list misses token/otp/ssn/passport and date_of_birth, so those columns would pass the R6 gate in plaintext."
+    },
+    {
+      "id": "CR-003",
+      "level": "WARN",
+      "confidence": "high",
+      "file": "docker-compose.prod.yml",
+      "summary": "The nginx trust IP is a magic constant duplicated across two compose keys with no check that they agree."
+    },
+    {
+      "id": "CR-004",
+      "level": "WARN",
+      "confidence": "medium",
+      "file": "docker-compose.yml",
+      "summary": "Compose fallback ${APP_ENV:-development} can silently override a production env_file value on the installer's deployment path."
+    }
+  ]
+}

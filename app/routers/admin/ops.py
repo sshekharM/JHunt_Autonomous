@@ -6,8 +6,12 @@ from app.models.user import User
 from app.models.portal_account import SystemPortalAccount
 from app.models.admin import AdminRole
 from app.dependencies import require_role
+from app.security.ip_allowlist import require_server_ip
 
-router = APIRouter(prefix="/api/admin/ops", tags=["admin-ops"])
+router = APIRouter(
+    prefix="/api/admin/ops", tags=["admin-ops"],
+    dependencies=[Depends(require_server_ip)],
+)
 
 
 @router.get("/dashboard")

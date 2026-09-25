@@ -1,13 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
-from typing import List
+from typing import List, Literal
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Application
-    app_env: str = "development"
+    # Secure by default: development (docs, non-https cookies) is an explicit opt-in.
+    app_env: Literal["development", "production"] = "production"
     app_secret_key: str
     app_base_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:5173"
@@ -88,7 +89,8 @@ class Settings(BaseSettings):
 
     @property
     def allowed_ip_list(self) -> List[str]:
-        return [ip.strip() for ip in self.allowed_ips.split(",")]
+        """Exact-match admin IP allowlist; blank entries dropped. Empty = deny all."""
+        return [ip.strip() for ip in self.allowed_ips.split(",") if ip.strip()]
 
     # Retention
     resume_retention_days: int = 0  # 0 = disabled

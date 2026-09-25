@@ -1,0 +1,60 @@
+{
+  "gate": "perf-smell",
+  "pass": false,
+  "checked": 11,
+  "summary": {
+    "block": 5,
+    "warn": 2
+  },
+  "findings": [
+    {
+      "id": "PERF-UNBOUNDED-LOAD",
+      "level": "WARN",
+      "file": "app/routers/admin/ops.py",
+      "line": 32,
+      "message": "Possible unbounded result load — add LIMIT/pagination"
+    },
+    {
+      "id": "PERF-UNBOUNDED-LOAD",
+      "level": "WARN",
+      "file": "app/routers/admin/portals.py",
+      "line": 23,
+      "message": "Possible unbounded result load — add LIMIT/pagination"
+    },
+    {
+      "id": "PERF-N1-LOOP-QUERY",
+      "level": "BLOCK",
+      "file": "app/routers/onboarding.py",
+      "line": 147,
+      "message": "Query/await inside loop — likely N+1; batch or eager-load"
+    },
+    {
+      "id": "PERF-N1-LOOP-QUERY",
+      "level": "BLOCK",
+      "file": "app/routers/onboarding.py",
+      "line": 169,
+      "message": "Query/await inside loop — likely N+1; batch or eager-load"
+    },
+    {
+      "id": "PERF-N1-LOOP-QUERY",
+      "level": "BLOCK",
+      "file": "app/routers/onboarding.py",
+      "line": 259,
+      "message": "Query/await inside loop — likely N+1; batch or eager-load"
+    },
+    {
+      "id": "PERF-N1-LOOP-QUERY",
+      "level": "BLOCK",
+      "file": "app/routers/onboarding.py",
+      "line": 277,
+      "message": "Query/await inside loop — likely N+1; batch or eager-load"
+    },
+    {
+      "id": "PERF-N1-LOOP-QUERY",
+      "level": "BLOCK",
+      "file": "app/routers/onboarding.py",
+      "line": 306,
+      "message": "Query/await inside loop — likely N+1; batch or eager-load"
+    }
+  ]
+}

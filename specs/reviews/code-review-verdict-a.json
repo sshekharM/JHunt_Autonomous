@@ -1,0 +1,99 @@
+{
+  "gate": "code-review",
+  "reviewer": "instance-a",
+  "verdict": "PASS",
+  "pass": true,
+  "range": "working tree (uncommitted) on fix/admin-ip-allowlist",
+  "story": "specs/stories/CHG-002-admin-ip-allowlist.md",
+  "summary": { "block": 0, "warn": 2, "info": 5 },
+  "verified": [
+    "AC1: 11 /api/admin APIRoutes, all 11 resolve require_server_ip in their dependant tree; 31 non-admin routes resolve none (the AC1 assertion is not vacuous).",
+    "AC2/AC3: require_server_ip is first in route.dependant.dependencies (before require_role.checker and get_db), so a disallowed IP gets 403 with no DB session opened; TestClient run returns 403 unauthenticated and 401 when the host is listed.",
+    "AC4/AC5: allowed_ip_list drops blank entries; require_server_ip denies on empty client host and empty allowlist. The prior fail-open ('' matching ['']) is closed.",
+    "pytest -q tests/unit/test_ip_allowlist.py: 12 passed (exit 0).",
+    "No other consumer of allowed_ip_list exists, so the parser change breaks no caller. ALLOWED_IPS is not runtime-mutable via /api/admin/config (only crawl_* fields), so no self-lockout path was added."
+  ],
+  "findings": [
+    {
+      "id": "CRA-001",
+      "level": "WARN",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "tests/unit/test_ip_allowlist.py",
+      "line": 42,
+      "message": "The AC1 test asserts on FastAPI dependency-injection internals (route.dependant.dependencies, via the recursive _depends_on helper) rather than on observable behaviour. It proves the wiring exists, not that a disallowed caller is actually refused on each admin route; only /api/admin/ops/dashboard is exercised behaviourally. It is also the least stakeholder-readable test in the file ('depends on require_server_ip' is a code detail, not a requirement).",
+      "fix": "Keep the route enumeration, but assert behaviour: parametrize over the (method, path) pairs of every /api/admin APIRoute, call each with the default TestClient host absent from ALLOWED_IPS, and assert 403. Rename to test_every_admin_endpoint_refuses_an_unlisted_ip. (TestClient in starlette/fastapi 0.111 does not accept a client= kwarg, so keep using the 'testclient' host constant.)"
+    },
+    {
+      "id": "CRA-002",
+      "level": "WARN",
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "app/security/ip_allowlist.py",
+      "line": 24,
+      "message": "Exact string matching plus the shipped default ALLOWED_IPS=127.0.0.1 silently locks out local operators on a dual-stack bind: uvicorn reports '::1' or '::ffff:127.0.0.1' for loopback when listening on '::', and neither string equals '127.0.0.1'. Fail-closed is intended, but this specific form is a foreseeable false denial that the .env.example caveat (which covers only the Docker bridge and nginx cases) does not mention, and no test covers an IPv6 host.",
+      "fix": "Add one line to the .env.example Security block naming the IPv6 loopback forms ('::1', '::ffff:127.0.0.1') and advising listing them alongside 127.0.0.1; optionally add a test asserting an IPv6 host is denied unless listed. Do not add CIDR/normalisation logic - that is explicitly out of scope for CHG-002."
+    },
+    {
+      "id": "CRA-003",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/routers/admin/ops.py",
+      "line": 13,
+      "message": "dependencies=[Depends(require_server_ip)] is repeated verbatim in all six admin routers, so a seventh admin router can be added without it. The AC1 test is the only thing that catches that omission.",
+      "fix": "Optional: pass the dependency once at include time in app/main.py, or mount the six routers under a single parent APIRouter that carries the dependency. Acceptable as-is because the route-enumeration test fails closed on a forgotten router."
+    },
+    {
+      "id": "CRA-004",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "app/main.py",
+      "line": 57,
+      "message": "CORSMiddleware answers OPTIONS preflight for /api/admin/* before routing, so preflight responses are returned to any IP without the allowlist check. This leaks only route existence, no admin data, and matches how FastAPI middleware/dependency ordering works.",
+      "fix": "No change required for CHG-002; note it if the story ever grows a 'no admin surface visible off-allowlist' criterion."
+    },
+    {
+      "id": "CRA-005",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": ".env.example",
+      "line": 73,
+      "message": "The comment says the check is 'checked before admin login/role checks', but no route in app/routers/ issues an admin token (payload key admin_sub is only ever read, in app/dependencies.py:42). The role-check half of the sentence is accurate; the login half describes an endpoint that does not exist yet. Pre-existing gap, surfaced by the new wording.",
+      "fix": "Reword to 'checked before admin authentication and role checks', or leave until an admin login route lands."
+    },
+    {
+      "id": "CRA-006",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/unit/test_ip_allowlist.py",
+      "line": 20,
+      "message": "_request(host) and _depends_on(dependant, target) have unannotated parameters, against the project's 'static typing everywhere' rule. Low impact: mypy is scoped to app/ in CLAUDE.md, and the context pack records that ruff/mypy could not be run in this environment.",
+      "fix": "Annotate: def _request(host: str | None) -> SimpleNamespace and def _depends_on(dependant: Dependant, target: Callable[..., object]) -> bool."
+    },
+    {
+      "id": "CRA-007",
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "specs/reviews/review-context-pack.md",
+      "line": 27,
+      "message": "ruff and mypy were not run for this change (not installed, no network). The diff is small and hand-checked, but the lint/type sensors this project relies on did not execute.",
+      "fix": "Run ruff check . and mypy app/ before merge once the environment allows."
+    }
+  ],
+  "stakeholder_readability": {
+    "assessment": "good, with one weak test name",
+    "notes": "The module docstring states the requirement in plain Given/When/Then language and each test carries its AC tag. Names like test_admin_route_from_unlisted_ip_is_forbidden_before_auth, test_admin_route_from_listed_ip_proceeds_to_authentication and test_empty_allowlist_denies_every_request read as the requirement to a non-technical reader. The exception is test_every_admin_route_depends_on_require_server_ip (CRA-001), whose name and body describe dependency wiring rather than the behaviour a stakeholder cares about."
+  }
+}

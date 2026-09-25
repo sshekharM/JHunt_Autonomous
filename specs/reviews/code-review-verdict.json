@@ -1,99 +1,136 @@
 {
   "gate": "code-review",
-  "pass": false,
-  "range": "working-tree (uncommitted CHG-001)",
-  "story": "specs/stories/CHG-001-unified-crawler-registry.md",
-  "summary": { "block": 1, "warn": 4, "info": 4 },
+  "verdict": "PASS",
+  "pass": true,
+  "range": "7c1cc13..9e364c2",
+  "branch": "fix/admin-ip-allowlist",
+  "summary": { "block": 0, "warn": 4, "info": 6 },
+  "verification": {
+    "tests_run": ".venv/Scripts/python.exe -m pytest -q tests/ -> exit 0, 454 passed, 10 skipped (run with APP_ENV unset, i.e. the new production default)",
+    "targeted_run": "tests/unit/{test_ip_allowlist,test_config,test_pii_policy,test_consent_store,test_onboarding,test_admin_config_ops}.py -> 80 passed",
+    "pii_heuristic_executed": "unprotected_pii_columns over all mapped columns -> flags exactly {(users,totp_secret),(admin_users,totp_secret)}",
+    "lint_types": "ruff/mypy not installed in .venv - NOT RUN"
+  },
   "findings": [
     {
       "id": "CR-001",
-      "level": "BLOCK",
-      "confidence": "high",
+      "level": "WARN",
+      "severity": "WARN",
+      "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/crawlers/registry.py",
-      "line": 11,
-      "description": "AC5 violated: importing the registry imports Playwright. `from app.crawlers.base import BaseCrawler` runs at registry import time, and app/crawlers/base.py:10 does `from playwright.async_api import BrowserContext`. Verified: `python -c \"import app.crawlers.registry\"` leaves playwright in sys.modules (True). The module docstring (lines 6-7) claims the opposite (\"imported lazily to keep Playwright out of import time\"). This is also a regression for the crawl task: app/tasks/crawl_jobs.py now imports the registry at module level (line 7), so `import app.tasks.crawl_jobs` — pulled in by every Celery worker/beat process via celery_app's include list — now imports Playwright where the old `_CRAWLER_MAP` + in-function importlib did not. test_registry_import_is_lazy only asserts monster/naukri absence, so it passes while the Playwright clause of AC5 fails.",
-      "fix": "In registry.py add `from __future__ import annotations`, move the BaseCrawler import under `if TYPE_CHECKING:` (typing.TYPE_CHECKING) so the annotations `type[BaseCrawler]` / `BaseCrawler` stay string-deferred, then extend the laziness test to assert no `playwright*` module is loaded (run that assertion in a subprocess, since playwright is already resident in the pytest process)."
+      "file": "app/security/pii_policy.py",
+      "line": 46,
+      "description": "consent_records.user_agent is stored plaintext but is neither flagged by _looks_like_pii nor recorded in PLAINTEXT_EXCEPTIONS, while ip_address in the same table is an explicit reviewed exception. The consent-audit comment added in the same range ('IP and user agent stay in the consent record only, not the log stream') treats the two as equally sensitive, so the R6 policy silently covers only half of the network identifiers it claims to govern.",
+      "message": "consent_records.user_agent escapes the PII policy while the sibling ip_address needs a reviewed exception.",
+      "fix": "Add \"agent\" to PII_NAME_TOKENS and ('consent_records', 'user_agent') to PLAINTEXT_EXCEPTIONS with the same DPDPA-evidence rationale."
     },
     {
       "id": "CR-002",
       "level": "WARN",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "tests/unit/test_registry.py",
-      "line": 77,
-      "description": "test_registry_import_is_lazy pops every `app.crawlers.*` entry out of sys.modules and never restores it, so it permanently changes module identity for the rest of the session. Verified experimentally: after the pop, a re-imported MonsterCrawler is a different class object (`M1 is M2` -> False) and `isinstance(new_crawler, pre_pop_BaseCrawler)` -> False. It also drops app.crawlers.session_manager, whose module-level singletons (`_browser`, `_context_pool`, `_pool_lock`, app/crawlers/session_manager.py:20-24) would then be duplicated, while app.services.application_service (imported at collection via app.main) keeps the *old* `get_context`/`ApplicationReceipt`/`BaseCrawler` bindings. Nothing fails today (21 passed; full suite 257 passed) only because tests/unit sorts before tests/validation and the validation crawler tests import locally and assert self-consistently. Any later test that patches `app.crawlers.session_manager.get_context`, does a cross-module isinstance, or any run under a randomising/ordering plugin gets a silently ineffective patch or a false failure.",
-      "fix": "Do not mutate the shared sys.modules. Either snapshot and restore (`saved = {n: m for n, m in sys.modules.items() if n.startswith('app.crawlers.')}` ... `finally: sys.modules.update(saved)`), or — preferably, and this also enables CR-001's assertion — assert laziness in a clean subprocess via `subprocess.run([sys.executable, '-c', ...])`."
+      "severity": "WARN",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "app/security/pii_policy.py",
+      "line": 45,
+      "description": "PII_NAME_TOKENS omits the secret-shaped tokens most likely to appear next in this codebase ('token', 'otp', 'ssn', 'passport'), and 'dob' only matches as a standalone underscore token so 'date_of_birth' is missed. A future plaintext column such as telegram_bot_token, refresh_token, or date_of_birth would pass test_no_model_column_stores_pii_in_plaintext, which is the whole enforcement mechanism for R6. No such column exists today (verified by running the heuristic over every mapped column), so this is a coverage gap, not a live defect.",
+      "message": "PII token list misses token/otp/ssn/passport and date_of_birth, so those columns would pass the R6 gate in plaintext.",
+      "fix": "Add \"token\", \"otp\", \"ssn\", \"passport\", \"birth\" to PII_NAME_TOKENS. Do not add \"key\": it would false-positive on the existing master_resume.minio_key / tailored_resumes.minio_key columns."
     },
     {
       "id": "CR-003",
       "level": "WARN",
-      "confidence": "medium",
+      "severity": "WARN",
+      "confidence": "high",
       "axis": "maintainability",
-      "file": "app/tasks/crawl_jobs.py",
-      "line": 30,
-      "description": "`is_known_portal` is a pure forwarding wrapper around `registry.is_supported` with no added behaviour, in a module that already imports `is_supported` directly (line 7). Unlike `application_service._crawler_for_portal` (kept deliberately for the app/tasks/status_check.py:98 caller), it has no external caller — only line 160 and its own test. Fake abstraction per the structure lens.",
-      "fix": "Delete `is_known_portal` and call `is_supported(portal_name)` at crawl_jobs.py:160; drop test_is_known_portal_matches_the_registry (test_crawl_portal_accepts_every_registry_portal already covers the behaviour)."
+      "file": "docker-compose.prod.yml",
+      "line": 75,
+      "description": "172.28.0.10 is the trust anchor for the whole admin allowlist and is hardcoded in two independent places (the app's --forwarded-allow-ips at :75 and nginx's ipv4_address at :134), plus a third copy in .env.example prose. Nothing validates that they agree (CI only runs nginx -t; there is no `docker compose config` check). If the subnet or the nginx address drifts, uvicorn stops trusting nginx, every admin request is evaluated against nginx's container IP, and admin is either fully locked out or 'fixed' by adding the proxy IP to ALLOWED_IPS - the exact failure mode .env.example warns is internet-wide exposure.",
+      "message": "The nginx trust IP is a magic constant duplicated across two compose keys with no check that they agree.",
+      "fix": "Declare it once (e.g. NGINX_IP=172.28.0.10 in .env) and interpolate ${NGINX_IP:-172.28.0.10} into both the nginx ipv4_address and the app's --forwarded-allow-ips."
     },
     {
       "id": "CR-004",
       "level": "WARN",
+      "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/tasks/crawl_jobs.py",
-      "line": 160,
-      "description": "The guard widened from case-sensitive to case-insensitive without normalising the value that flows downstream. Previously `crawl_portal('Naukri')` returned `{'error': 'Unknown portal: Naukri'}`; now the guard passes and the un-lowered name reaches `_run_crawl`, which uses it raw for `SystemPortalAccount.portal == portal_name` (line 49), `get_context(portal_name)` (line 60) and the `UPDATE ... WHERE portal = :p` at line 68. Result: an explicit error becomes a silent `{'status': 'skipped', 'reason': 'no_active_account'}` plus a stray browser-context key. Not reachable from today's callers (beat args and app/routers/admin/crawls.py:9 are lowercase), but crawl_portal is a Celery task invokable by name with arbitrary args.",
-      "fix": "Normalise once in `crawl_portal` right after the guard: `portal_name = portal_name.lower()` before `asyncio.run(_run_crawl(portal_name))`."
+      "file": "docker-compose.yml",
+      "line": 68,
+      "description": "APP_ENV: ${APP_ENV:-development} fails open. A compose `environment:` entry takes precedence over `env_file: .env`, so when interpolation cannot resolve APP_ENV (non-default --env-file, an explicit --project-directory, or a missing .env) the container runs as development regardless of APP_ENV=production inside the env file - re-enabling /api/docs and non-https session cookies, the precise posture R9 removed. This is on a production path: installer/core/autostart.py:49 deploys real installations with docker-compose.yml, and installer/core/env_writer.py:55 relies on APP_ENV=production being honoured. The default paths (systemd WorkingDirectory=install_dir; the Windows task's `cd /d install_dir`) do resolve correctly today, which is why this is a WARN rather than a BLOCK.",
+      "message": "Compose fallback ${APP_ENV:-development} can silently override a production env_file value on the installer's deployment path.",
+      "fix": "Use ${APP_ENV:-production}. Local dev still resolves to development because init.sh copies .env.example (APP_ENV=development) to .env, which compose interpolates."
     },
     {
       "id": "CR-005",
-      "level": "WARN",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/routers/admin/crawls.py",
-      "line": 9,
-      "description": "A third hardcoded portal list survives the unification: `PORTALS = ['naukri', 'linkedin', 'glassdoor', 'indeed']`, used to gate `crawl_portal.delay(portal)` at line 20. The registry docstring now claims to be the 'single source of truth', but admin-triggered crawls still 400 on monster and shine — the same divergence class the story exists to remove (risk-map R4). Pre-existing and outside the diff's touched lines, so non-blocking, but it falsifies the diff's own claim and is a one-line fix.",
-      "fix": "Replace the literal list and the `portal not in PORTALS` check with `from app.crawlers.registry import is_supported, SUPPORTED_PORTALS` and `if not is_supported(portal):`."
+      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "docker-compose.prod.yml",
+      "line": 134,
+      "description": "Docker's IPAM allocates dynamic addresses sequentially from 172.28.0.2 and does not pre-reserve statically configured addresses. With the six dynamically addressed services today the pool tops out around .7, so .10 is safe; adding three more services (or scaling one) can hand .10 to another container first, after which nginx fails to start with 'Address already in use'. nginx starts last (depends_on: app), which maximises the exposure.",
+      "message": "Static ipv4_address 172.28.0.10 sits inside the dynamic allocation pool.",
+      "fix": "Reserve the dynamic pool away from the static address: add `ip_range: 172.28.0.0/25` under the ipam config and move nginx to 172.28.0.130 (or keep .10 and set ip_range to 172.28.0.128/25)."
     },
     {
       "id": "CR-006",
       "level": "INFO",
+      "severity": "INFO",
       "confidence": "high",
       "axis": "maintainability",
-      "file": "tests/unit/test_crawl_jobs.py",
-      "line": 45,
-      "description": "test_crawl_jobs_has_no_private_portal_map asserts on the absence of private implementation symbols (`_CRAWLER_MAP`, `_import_crawler`) rather than on public behaviour. It cannot fail for any correct implementation and pins the current internals against future refactors. test_crawl_portal_accepts_every_registry_portal already proves the crawl task and registry agree.",
-      "fix": "Delete the test; keep the registry-parity tests that assert behaviour."
+      "file": "app/routers/admin/config.py",
+      "line": 9,
+      "description": "The same four-line guarded-router construction is repeated across all six admin routers; a seventh admin router can silently omit the dependency. The risk is contained because tests/unit/test_ip_allowlist.py:43 enumerates the app's actual routes and fails on any unguarded /api/admin path, so this is style, not exposure.",
+      "message": "Router-level allowlist dependency duplicated in six files.",
+      "fix": "Optional: pass dependencies=[Depends(require_server_ip)] once at each app.include_router(admin_*) call in app/main.py instead of in each router module."
     },
     {
       "id": "CR-007",
       "level": "INFO",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": "tests/unit/test_crawl_jobs.py",
-      "line": 19,
-      "description": "`patch.object(crawl_jobs.asyncio, 'run', ...)` patches the stdlib asyncio module object itself (crawl_jobs does a plain `import asyncio`), so `asyncio.run` is globally replaced for the duration of the with-block, and the test has to hand-close the orphaned coroutine (line 16). Harmless in the current single-threaded run, but it is a process-wide stdlib mutation to test a portal guard.",
-      "fix": "Patch the unit under test instead: `patch.object(crawl_jobs, '_run_crawl', new=AsyncMock(return_value={...}))`, leaving asyncio.run real."
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/security/ip_allowlist.py",
+      "line": 24,
+      "description": "A denied admin request raises 403 without emitting an audit event, so an IP scan of /api/admin leaves no trace in the log stream while successful admin actions are audited. Listed as a deferred follow-up in specs/stories/CHG-002-admin-ip-allowlist.md, so it is recorded, not re-litigated.",
+      "message": "Denied admin attempts are not audited.",
+      "fix": "Call audit(\"admin.ip_denied\", details={\"client_ip\": client_ip}) immediately before raising the HTTPException."
     },
     {
       "id": "CR-008",
       "level": "INFO",
+      "severity": "INFO",
       "confidence": "high",
-      "axis": "behaviour",
-      "file": "app/crawlers/registry.py",
-      "line": 36,
-      "description": "`getattr(importlib.import_module(module_path), class_name)` raises AttributeError (or ImportError) rather than the documented ValueError if a registry entry names a module/class that no longer exists — e.g. a crawler class rename. Callers such as app/tasks/status_check.py:100 catch broad `Exception`, so nothing breaks, but the docstring's 'ValueError if unknown' contract is only true for unknown portal names, not broken entries. No test exercises a malformed entry.",
-      "fix": "Optional: add a test that a bad `_REGISTRY` entry surfaces a clear error, or state in the docstring that registry entries are trusted."
+      "axis": "maintainability",
+      "file": "tests/unit/test_config.py",
+      "line": 28,
+      "description": "test_unrecognised_app_env_is_rejected asserts only that some ValidationError is raised; it would pass for the wrong reason if any other required setting were missing. It is non-vacuous today because the root conftest.py seeds APP_SECRET_KEY / POSTGRES_PASSWORD / MINIO_SECRET_KEY / FERNET_KEY, but the assertion does not pin that.",
+      "message": "Rejection test does not assert which field failed validation.",
+      "fix": "Use pytest.raises(ValidationError, match=\"app_env\") so the test can only pass for the Literal constraint."
     },
     {
       "id": "CR-009",
       "level": "INFO",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "tests/unit/test_onboarding.py",
+      "line": 169,
+      "description": "assert len(wired.tenant.executed) == 2 pins the number of SQL statements the handler issues rather than an observable outcome, so a behaviour-preserving refactor that merges two statements would fail it. Acceptable as deliberate characterization pinning ahead of the R15/R16 extraction work, but it should not outlive that refactor.",
+      "message": "Characterization test asserts internal statement count.",
+      "fix": "Replace with an assertion on the resulting profile state once the onboarding extraction lands."
+    },
+    {
+      "id": "CR-010",
+      "level": "INFO",
+      "severity": "INFO",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "app/tasks/status_check.py",
-      "line": 98,
-      "description": "The story's problem statement names status checking of Monster/Shine as broken, and the caller is the reason `_crawler_for_portal`'s name was preserved, but no test covers the status_check path. It is covered transitively (status_check calls `_crawler_for_portal`, which AC1/AC2 tests cover) and the call site is unchanged, so this is coverage-completeness only.",
-      "fix": "Optional: add a test that the status_check portal grouping resolves a crawler for 'monster', or note the transitive coverage in the story."
+      "file": "app/routers/onboarding.py",
+      "line": 147,
+      "description": "Assessment of the registry perf-smell BLOCK (5x PERF-N1-LOOP-QUERY at 147/169/259/277/306): false positive. get_tenant_db (app/database.py:90-96) is a single-yield async generator, so `async for tenant_db in get_tenant_db(schema)` runs exactly one iteration - it is the dependency-generator-as-context-manager idiom, not a per-row query loop. Exhausting the generator also runs its finally, so the session is closed; there is no leak. All five lines are pre-existing and untouched by this range (the diff changed only lines 94-100).",
+      "message": "perf-smell PERF-N1-LOOP-QUERY findings on onboarding.py are false positives on pre-existing lines.",
+      "fix": "No code change. Suppress or teach the perf sensor to ignore `async for x in <single-yield dependency generator>`."
     }
   ]
 }
