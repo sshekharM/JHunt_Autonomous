@@ -16,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.routers import auth, dashboard, notifications, onboarding
+from app.routers import auth, consent, dashboard, notifications, onboarding
 from app.routers.admin import config as admin_config
 from app.routers.admin import crawls as admin_crawls
 from app.routers.admin import ops as admin_ops
@@ -67,6 +67,7 @@ app.include_router(onboarding.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
 app.include_router(applications_router)
+app.include_router(consent.router)
 
 # Admin routers
 app.include_router(admin_users.router)
