@@ -1,7 +1,7 @@
 """
 CHG-007 on real PostgreSQL: a grant recorded before migration 0006 reads as
 'granted' afterwards; withdrawing appends a second row (the first is left
-exactly as it was, and the user row lock is taken); repeating the withdrawal
+exactly as it was, and the FOR UPDATE lock is valid SQL on PostgreSQL); repeating the withdrawal
 adds nothing; downgrading to 0005 keeps both rows. Runs only when
 RUN_DB_TESTS=1 (the CI "integration" job).
 """
@@ -65,6 +65,14 @@ async def _execute(session, sql):
 async def _withdraw(session):
     from app.compliance.consent_store import withdraw_consent
     return await withdraw_consent("u-db", ["auto_apply"], "203.0.113.9", "Browser/2", session)
+
+
+@pytest.fixture(autouse=True)
+def _disposable_database_only():
+    """This test downgrades to base (drops every shared table): never on a real DB."""
+    from app.config import settings
+    if not settings.postgres_db.endswith("_test"):
+        pytest.fail(f"refusing to run migrations against {settings.postgres_db!r}; use a *_test DB")
 
 
 def test_withdrawal_appends_a_row_and_survives_a_downgrade():
