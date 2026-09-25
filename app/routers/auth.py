@@ -1,6 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse, JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db, provision_user_schema
@@ -151,16 +152,20 @@ async def _pending_2fa_user(pending_2fa: Optional[str], db: AsyncSession) -> Use
     return user
 
 
+class TotpVerifyRequest(BaseModel):
+    code: str  # in the body, never the URL, so one-time codes stay out of access logs
+
+
 @router.post("/totp/verify")
 @limiter.limit("10/minute")
 async def verify_totp_code(
     request: Request,
-    code: str,
+    body: TotpVerifyRequest,
     pending_2fa: Optional[str] = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _pending_2fa_user(pending_2fa, db)
-    if not verify_totp(user.totp_secret, code):
+    if not verify_totp(user.totp_secret, body.code):
         audit("auth.totp_failed", user_id=user.id)
         raise HTTPException(status_code=400, detail="Invalid TOTP code.")
 

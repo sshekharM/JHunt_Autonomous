@@ -132,8 +132,20 @@ def _callback(api, provider="google"):
 
 def _verify(api, token=None, code=None, params=None):
     headers = {"Cookie": f"pending_2fa={token}"} if token is not None else {}
-    query = {"code": code or pyotp.TOTP(SECRET).now(), **(params or {})}
-    return api.client.post("/api/auth/totp/verify", params=query, headers=headers)
+    body = {"code": code or pyotp.TOTP(SECRET).now()}
+    return api.client.post("/api/auth/totp/verify", json=body, params=params, headers=headers)
+
+
+def test_verify_refuses_a_code_sent_in_the_query_string(api):
+    """Given a valid pending session, when the code is sent in the URL instead of
+    the body, then it is refused (422) so one-time codes never reach access logs."""
+    token = _cookie_value(_callback(api).headers["set-cookie"])
+    resp = api.client.post(
+        "/api/auth/totp/verify", params={"code": pyotp.TOTP(SECRET).now()},
+        headers={"Cookie": f"pending_2fa={token}"},
+    )
+    assert resp.status_code == 422
+    assert "access_token" not in resp.headers.get("set-cookie", "")
 
 
 # --- login ------------------------------------------------------------------------
@@ -183,6 +195,7 @@ def test_callback_creates_an_unverified_user_on_first_login(api):
 
     [created] = api.db.added
     assert created.totp_verified is False and created.oauth_sub == "g-1"
+    assert created.onboarding_complete is False and created.onboarding_step == 1
     assert created.email_hash == sha256_hash(EMAIL.lower()) and api.db.commits == 1
     assert response.json()["is_new_user"] is True
     [cookie] = _cookies(response, "pending_2fa")
@@ -198,6 +211,8 @@ def test_callback_for_verified_user_still_logs_straight_in(api, onboarded, targe
     assert response.status_code == 302 and response.headers["location"] == target
     [cookie] = _cookies(response, "access_token")
     assert "purpose" not in decode_access_token(_cookie_value(cookie))
+    attrs = cookie.lower()
+    assert "httponly" in attrs and "secure" in attrs and "samesite=lax" in attrs
     assert _cookies(response, "pending_2fa") == []
     assert api.events == ["auth.login"]
 
