@@ -3,9 +3,10 @@ Job service — shared schema operations for crawled jobs.
 Deduplication key: (portal, portal_job_id) via INSERT ON CONFLICT DO UPDATE.
 """
 from datetime import datetime, timezone
+from typing import Any, cast
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,26 +56,26 @@ async def store_jobs(
             "last_seen_at": now,
         }
 
-        stmt = pg_insert(Job).values(**values)
-        stmt = stmt.on_conflict_do_update(
+        insert_stmt = pg_insert(Job).values(**values)
+        upsert_stmt = insert_stmt.on_conflict_do_update(
             constraint="uq_job_portal_id",
             set_={
-                "title": stmt.excluded.title,
-                "company": stmt.excluded.company,
-                "location": stmt.excluded.location,
-                "job_url": stmt.excluded.job_url,
-                "description": stmt.excluded.description,
-                "skills_required": stmt.excluded.skills_required,
-                "salary_range": stmt.excluded.salary_range,
-                "experience_required": stmt.excluded.experience_required,
-                "is_easy_apply": stmt.excluded.is_easy_apply,
+                "title": insert_stmt.excluded.title,
+                "company": insert_stmt.excluded.company,
+                "location": insert_stmt.excluded.location,
+                "job_url": insert_stmt.excluded.job_url,
+                "description": insert_stmt.excluded.description,
+                "skills_required": insert_stmt.excluded.skills_required,
+                "salary_range": insert_stmt.excluded.salary_range,
+                "experience_required": insert_stmt.excluded.experience_required,
+                "is_easy_apply": insert_stmt.excluded.is_easy_apply,
                 "is_active": True,
-                "extra": stmt.excluded.extra,
+                "extra": insert_stmt.excluded.extra,
                 "last_seen_at": now,
             },
         ).returning(text("(xmax = 0) AS is_insert"))
 
-        result = await db.execute(stmt)
+        result = await db.execute(upsert_stmt)
         row = result.fetchone()
         if row and row[0]:
             inserted += 1
@@ -143,7 +144,7 @@ async def get_unmatched_jobs(
     db: AsyncSession,
     schema_name: str,
     batch_size: int = 500,
-) -> list[Job]:
+) -> list[dict[str, Any]]:
     """
     Return global jobs not yet present in the user's tenant schema.
     Used by match_jobs task to find new work per user.
@@ -187,6 +188,8 @@ async def mark_jobs_inactive(
         {"portal": portal, "ids": portal_job_ids},
     )
     await db.commit()
-    count = result.rowcount
+    # Result is typed generically, but a raw UPDATE via text() always executes
+    # through the DBAPI cursor, so .rowcount is genuinely present at runtime.
+    count = cast(CursorResult[Any], result).rowcount
     logger.info("job_service.mark_inactive", portal=portal, count=count)
     return count
