@@ -68,8 +68,12 @@ async def queue_discovered_skills(
         if llm_suggest_category_fn:
             try:
                 suggested_category = await llm_suggest_category_fn(skill)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "taxonomy_discovery.category_suggestion_failed",
+                    skill=skill,
+                    error=str(exc),
+                )
 
         new_skill = SkillTaxonomy(
             skill_name=skill,

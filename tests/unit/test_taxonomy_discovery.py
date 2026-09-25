@@ -4,7 +4,7 @@ Characterization tests for app.ml.taxonomy_discovery.
 No real DB or LLM calls -- AsyncSession and the category-suggestion
 callback are fakes.
 """
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -104,6 +104,22 @@ async def test_queue_discovered_skills_uses_llm_suggestion_when_provided():
     suggest.assert_awaited_once_with("Rust")
     added = db.add.call_args[0][0]
     assert added.auto_suggested_category == "Languages"
+
+
+@pytest.mark.asyncio
+async def test_queue_discovered_skills_logs_and_continues_when_llm_suggestion_fails():
+    db = _db_no_existing()
+    suggest = AsyncMock(side_effect=RuntimeError("llm down"))
+
+    with patch("app.ml.taxonomy_discovery.logger") as mock_logger:
+        queued = await taxonomy_discovery.queue_discovered_skills(
+            ["Rust"], db, llm_suggest_category_fn=suggest
+        )
+
+    assert queued == 1
+    added = db.add.call_args[0][0]
+    assert added.auto_suggested_category == ""
+    mock_logger.warning.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

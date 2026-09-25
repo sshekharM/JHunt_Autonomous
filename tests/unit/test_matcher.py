@@ -88,9 +88,11 @@ def test_get_st_model_returns_none_when_sentence_transformers_missing():
     # so the real ImportError path runs.
     matcher._st_model = None
 
-    model = matcher._get_st_model()
+    with patch("app.ml.matcher.logger") as mock_logger:
+        model = matcher._get_st_model()
 
     assert model is None
+    mock_logger.info.assert_called_once()
 
 
 def test_compute_match_with_use_semantic_falls_back_to_tfidf_when_unavailable():
@@ -99,6 +101,29 @@ def test_compute_match_with_use_semantic_falls_back_to_tfidf_when_unavailable():
     result = matcher.compute_match(["Python"], ["Python"], use_semantic=True)
 
     assert result["matched"] == ["Python"]
+
+
+def test_compute_match_uses_tfidf_when_use_semantic_false_even_with_model_available():
+    """Pins the `use_semantic and _get_st_model()` guard: a semantic model
+    that would score differently must NOT be used when use_semantic=False."""
+    with patch("app.ml.matcher._get_st_model", return_value=_FakeModel()):
+        semantic_result = matcher._semantic_match(["Java"], ["Python"])
+        tfidf_result = matcher.compute_match(["Java"], ["Python"], use_semantic=False)
+
+    # semantic match of orthogonal skills would report no match at all;
+    # tfidf still reports the (non-matching) skill via exact-match logic
+    assert semantic_result["matched"] == []
+    assert tfidf_result == matcher._tfidf_match(["Java"], ["Python"])
+
+
+def test_compute_match_defaults_use_semantic_to_false():
+    """Pins the default value of use_semantic: omitting it must behave
+    identically to passing use_semantic=False, even when a semantic model
+    is available and would produce a different result."""
+    with patch("app.ml.matcher._get_st_model", return_value=_FakeModel()):
+        default_result = matcher.compute_match(["Java"], ["Python"])
+
+    assert default_result == matcher._tfidf_match(["Java"], ["Python"])
 
 
 def test_semantic_match_falls_back_to_tfidf_when_model_unavailable():
@@ -111,13 +136,39 @@ def test_semantic_match_falls_back_to_tfidf_when_model_unavailable():
 
 
 def test_semantic_match_uses_model_similarity_when_available():
-    with patch("app.ml.matcher._get_st_model", return_value=_FakeModel()):
+    fake_model = _FakeModel()
+    fake_model.encode = MagicMock(wraps=fake_model.encode)
+
+    with patch("app.ml.matcher._get_st_model", return_value=fake_model):
         result = matcher._semantic_match(["Python", "Java"], ["Python", "Kubernetes"])
 
     assert result["matched"] == ["Python"]
     assert result["missing"] == ["Kubernetes"]
     assert result["score"] == 0.5
     assert result["coverage_pct"] == 50.0
+    # encoding must request numpy arrays (the rest of the function relies
+    # on numpy operations such as np.linalg.norm)
+    for call in fake_model.encode.call_args_list:
+        assert call.kwargs["convert_to_numpy"] is True
+
+
+def test_semantic_match_boundary_at_exact_threshold_counts_as_matched():
+    """max_sim == SEMANTIC_THRESHOLD (0.75) must count as matched, pinning
+    the `>=` comparison against an off-by-boundary `>` mutation."""
+    boundary_model = MagicMock()
+    user_vec = np.array([[1.0, 0.0]])
+    # dx chosen so that, after this function's epsilon-adjusted
+    # normalization (norm + 1e-8), the resulting cosine similarity is
+    # exactly 0.75 in float64 -- not merely close to it.
+    dx = 0.750000015
+    job_vec = np.array([[dx, (1 - dx**2) ** 0.5]])
+    boundary_model.encode.side_effect = [user_vec, job_vec]
+
+    with patch("app.ml.matcher._get_st_model", return_value=boundary_model):
+        result = matcher._semantic_match(["Python"], ["Python"])
+
+    assert result["matched"] == ["Python"]
+    assert result["missing"] == []
 
 
 def test_semantic_match_falls_back_to_tfidf_on_encode_error():

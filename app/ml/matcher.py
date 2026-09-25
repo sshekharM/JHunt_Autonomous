@@ -25,8 +25,8 @@ def _get_st_model():
         try:
             from sentence_transformers import SentenceTransformer
             _st_model = SentenceTransformer("all-MiniLM-L6-v2")
-        except ImportError:
-            pass
+        except ImportError as exc:
+            logger.info("matcher.semantic_model_unavailable", error=str(exc))
     return _st_model
 
 
