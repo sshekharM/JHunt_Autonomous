@@ -1,10 +1,12 @@
 """
 User data deletion — three modes as per DPDPA and user choice.
 """
-from enum import Enum
 from datetime import datetime, timedelta, timezone
+from enum import Enum
+
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, delete
+
 from app.database import validate_schema_name
 from app.models.user import User
 from app.security.audit_log import audit
