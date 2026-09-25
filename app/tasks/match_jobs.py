@@ -105,7 +105,7 @@ async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
 
     if high_match_jobs:
         from app.tasks.notify import send_match_notification
-        send_match_notification.delay(user_id, high_match_jobs)
+        send_match_notification.delay(user_id, schema_name, high_match_jobs)
 
     return {
         "user_id": user_id,

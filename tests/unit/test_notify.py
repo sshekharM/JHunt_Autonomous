@@ -118,3 +118,58 @@ def test_dispatch_activity_digest_invokes_async_digest():
         dispatch_activity_digest.run("user-1", "u_abc")
 
     mock_digest.assert_awaited_once_with("user-1", "u_abc")
+
+
+@pytest.mark.asyncio
+async def test_match_notification_sends_a_new_match_event():
+    """Given high-scoring jobs, when the match notification runs, then the user
+    gets one in-app 'new_match' notification listing each job and its score."""
+    from app.tasks.notify import _async_match_notification
+
+    tenant_db = AsyncMock()
+    factory, shared_db = _shared_db_factory()
+    jobs = [
+        {"title": "Backend Engineer", "company": "Acme", "score": 0.912},
+        {"title": "SRE", "company": "Globex", "score": 0.8},
+    ]
+    with patch("app.tasks.notify.AsyncSessionLocal", factory), patch(
+        "app.tasks.notify.tenant_session", _fake_tenant_session(tenant_db)
+    ), patch("app.services.notification_service.notify", new=AsyncMock()) as mock_notify:
+        await _async_match_notification("user-1", "u_abc", jobs)
+
+    kwargs = mock_notify.await_args.kwargs
+    assert kwargs["user_id"] == "user-1" and kwargs["event_type"] == "new_match"
+    assert kwargs["subject"] == "2 new high-match jobs"
+    assert "<li><strong>Backend Engineer</strong> at Acme (91%)</li>" in kwargs["body"]
+    assert "<li><strong>SRE</strong> at Globex (80%)</li>" in kwargs["body"]
+    assert kwargs["tenant_db"] is tenant_db and kwargs["shared_db"] is shared_db
+
+
+@pytest.mark.asyncio
+async def test_match_notification_uses_singular_for_one_job():
+    from app.tasks.notify import _async_match_notification
+
+    factory, _ = _shared_db_factory()
+    with patch("app.tasks.notify.AsyncSessionLocal", factory), patch(
+        "app.tasks.notify.tenant_session", _fake_tenant_session(AsyncMock())
+    ), patch("app.services.notification_service.notify", new=AsyncMock()) as mock_notify:
+        await _async_match_notification("user-1", "u_abc", [{"title": "T", "company": "C", "score": 0.75}])
+
+    assert mock_notify.await_args.kwargs["subject"] == "1 new high-match job"
+
+
+def test_send_match_notification_runs_the_async_body():
+    from app.tasks import notify
+
+    with patch.object(notify, "_async_match_notification", new=AsyncMock()) as body:
+        notify.send_match_notification("user-1", "u_abc", [])
+    body.assert_awaited_once_with("user-1", "u_abc", [])
+
+
+def _fake_tenant_session(tenant_db):
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _cm(_schema_name):
+        yield tenant_db
+    return _cm

@@ -1,5 +1,5 @@
 """
-Celery task for daily activity digests.
+Celery tasks for user notifications: high-match alerts and daily activity digests.
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -7,11 +7,37 @@ from datetime import datetime, timedelta, timezone
 import structlog
 from sqlalchemy import func, select
 
-from app.database import AsyncSessionLocal, get_tenant_db
+from app.database import AsyncSessionLocal, get_tenant_db, tenant_session
 from app.tasks.celery_app import celery_app
 from app.tenant_models.notification import NotificationChannel, NotificationLog
 
 logger = structlog.get_logger("tasks.notify")
+
+
+@celery_app.task
+def send_match_notification(user_id: str, schema_name: str, jobs: list[dict]):
+    """Tell the user about jobs that cleared the high-match threshold."""
+    asyncio.run(_async_match_notification(user_id, schema_name, jobs))
+
+
+async def _async_match_notification(user_id: str, schema_name: str, jobs: list[dict]) -> None:
+    from app.services import notification_service
+
+    count = len(jobs)
+    items_html = "".join(
+        f"<li><strong>{j['title']}</strong> at {j['company']} ({round(j['score'] * 100)}%)</li>"
+        for j in jobs
+    )
+    async with AsyncSessionLocal() as shared_db, tenant_session(schema_name) as tenant_db:
+        await notification_service.notify(
+            user_id=user_id,
+            event_type="new_match",
+            subject=f"{count} new high-match job{'s' if count != 1 else ''}",
+            body=f"<p>New jobs that closely match your profile:</p><ul>{items_html}</ul>",
+            tenant_db=tenant_db,
+            shared_db=shared_db,
+        )
+    logger.info("notify.match_sent", user_id=user_id, job_count=count)
 
 
 @celery_app.task

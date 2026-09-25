@@ -34,7 +34,7 @@ async def test_match_rejects_invalid_schema_before_sql():
 @pytest.mark.asyncio
 async def test_match_opens_tenant_session_for_validated_schema():
     from app.tasks.match_jobs import _run_match_for_user
-    factory, session = _session_factory()
+    factory, _session = _session_factory()
     with patch("app.database.AsyncSessionLocal", factory):
         result = await _run_match_for_user("user-1", VALID)
     assert result["skipped"] == "no_skills"
@@ -158,11 +158,10 @@ async def test_match_does_not_dispatch_below_threshold_without_touching_notify()
 
 
 @pytest.mark.asyncio
-async def test_high_match_job_currently_raises_importerror():
-    """Known bug: app.tasks.notify has no send_match_notification, but
-    _run_match_for_user does `from app.tasks.notify import
-    send_match_notification` once a job clears HIGH_MATCH_THRESHOLD. This
-    pins today's (broken) runtime behaviour rather than papering over it."""
+async def test_high_match_job_queues_a_match_notification():
+    """Given a job that clears HIGH_MATCH_THRESHOLD, when matching runs, then a
+    match notification is queued for that user's schema. (This used to raise
+    ImportError: notify.send_match_notification did not exist.)"""
     from app.tasks.match_jobs import _run_match_for_user
 
     jobs = [_job()]
@@ -174,8 +173,14 @@ async def test_high_match_job_currently_raises_importerror():
     ), patch(
         "app.ml.matcher.compute_match",
         return_value={"score": 0.9, "matched": ["Python"], "missing": [], "coverage_pct": 100.0},
-    ), pytest.raises(ImportError):
-        await _run_match_for_user("user-1", VALID)
+    ), patch("app.tasks.notify.send_match_notification") as mock_task:
+        result = await _run_match_for_user("user-1", VALID)
+
+    assert result["high_match"] == 1
+    mock_task.delay.assert_called_once_with("user-1", VALID, [{
+        "portal": "linkedin", "portal_job_id": "j-1",
+        "title": "Backend Engineer", "company": "Acme", "score": 0.9,
+    }])
 
 
 # ---------------------------------------------------------------------------
@@ -274,3 +279,55 @@ def test_match_jobs_for_user_task_reraises_on_failure():
         new=AsyncMock(side_effect=RuntimeError("bad schema")),
     ), pytest.raises(RuntimeError):
         match_jobs_for_user.run("u1", VALID)
+
+
+async def _run_scored(score):
+    """Run one job through matching at a fixed score; return (result, session, task mock)."""
+    from app.tasks.match_jobs import _run_match_for_user
+
+    factory, session = _skills_session(["Python"])
+    with patch("app.database.AsyncSessionLocal", factory), patch(
+        "app.services.job_service.get_unmatched_jobs", new=AsyncMock(return_value=[_job()])
+    ), patch(
+        "app.ml.feedback.compute_user_score_adjustment", new=AsyncMock(return_value={})
+    ), patch(
+        "app.ml.matcher.compute_match",
+        return_value={"score": score, "matched": ["Python"], "missing": [], "coverage_pct": 100.0},
+    ), patch("app.tasks.notify.send_match_notification") as mock_task:
+        result = await _run_match_for_user("user-1", VALID)
+    return result, session, mock_task
+
+
+@pytest.mark.asyncio
+async def test_a_score_exactly_at_the_threshold_counts_as_a_high_match():
+    from app.tasks.match_jobs import HIGH_MATCH_THRESHOLD
+
+    result, _, mock_task = await _run_scored(HIGH_MATCH_THRESHOLD)
+    assert result["high_match"] == 1
+    mock_task.delay.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_matched_jobs_are_stored_as_active():
+    from app.tenant_models.job import MatchedJob
+
+    _, session, _ = await _run_scored(0.9)
+    [stored] = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], MatchedJob)]
+    assert stored.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_run_match_all_users_selects_only_active_onboarded_users():
+    from sqlalchemy.dialects import postgresql
+
+    from app.tasks.match_jobs import _run_match_all_users
+
+    factory = _users_session([])
+    with patch("app.database.AsyncSessionLocal", factory):
+        await _run_match_all_users()
+
+    session = factory.return_value.__aenter__.return_value
+    stmt = session.execute.await_args.args[0]
+    sql = str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "users.is_active IS true" in sql
+    assert "users.onboarding_complete IS true" in sql
