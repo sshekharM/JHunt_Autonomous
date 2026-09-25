@@ -16,6 +16,8 @@ from app.services import notification_service
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.auto_apply")
+# Consents an automated, LLM-tailored application needs (CHG-007)
+_LLM_APPLY_SCOPES = ("auto_apply", "llm_processing")
 
 
 def _consent_refused(user_id: str, consent: ConsentRecord | None, scope: str) -> bool:
@@ -189,6 +191,10 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
 
                         if master_resume is None:
                             logger.warning("auto_apply.no_master_resume", user_id=user_id)
+                            break
+                        # Re-read: a withdrawal during this run must stop the rest of it.
+                        consent = await consent_store.current_consent(user_id, shared_db)
+                        if any(_consent_refused(user_id, consent, s) for s in _LLM_APPLY_SCOPES):
                             break
 
                         # Parse master resume text

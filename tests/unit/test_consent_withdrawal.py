@@ -87,7 +87,8 @@ def test_current_consent_returns_the_latest_record_for_the_user():
     assert asyncio.run(current_consent("u1", db)) is latest
     sql = db.statements[0]
     assert "consent_records.user_id = %(user_id_1)s" in sql
-    assert "ORDER BY consent_records.consented_at DESC" in sql and "LIMIT" in sql
+    assert "ORDER BY consent_records.consented_at DESC, consent_records.id DESC" in sql
+    assert "LIMIT" in sql
 
 
 def test_current_consent_is_none_without_a_record():
@@ -99,7 +100,7 @@ def test_consent_history_returns_every_record_oldest_first():
     db = _FakeDB(rows)
 
     assert asyncio.run(consent_history("u1", db)) == rows
-    assert "ORDER BY consent_records.consented_at ASC" in db.statements[0]
+    assert "ORDER BY consent_records.consented_at ASC, consent_records.id ASC" in db.statements[0]
 
 
 # --- AC3: a withdrawal is a new row --------------------------------------
@@ -131,6 +132,13 @@ def test_withdrawal_carries_scopes_already_withdrawn_earlier(audited):
     assert (new.consented_to_auto_apply, new.consented_to_llm_processing,
             new.consented_to_data_processing) == (False, False, False)
     assert outcome.withdrawn == ("data_processing", "llm_processing")
+
+
+def test_withdrawal_sorts_after_the_record_it_replaces_even_if_this_clock_is_behind():
+    """Rows are stamped by whichever host writes them; a withdrawal must still be current."""
+    ahead = datetime.now(timezone.utc) + timedelta(hours=1)
+    outcome = _withdraw(_FakeDB([], [_grant(consented_at=ahead)]), ["auto_apply"])
+    assert outcome.record.consented_at > ahead
 
 
 def test_withdrawal_stamps_its_own_time():
@@ -218,3 +226,7 @@ def test_withdrawn_data_processing_stops_every_scope(scope):
 @pytest.mark.parametrize("scope", ["auto_apply", "llm_processing", "data_processing"])
 def test_no_consent_record_allows_nothing(scope):
     assert consent_allows(None, scope) is False
+
+
+def test_an_unknown_scope_is_not_allowed():
+    assert consent_allows(_grant(), "marketing") is False

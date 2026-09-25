@@ -57,6 +57,7 @@ class _World:
 
     def __init__(self):
         self.consent, self.tenant = _consent(), _Tenant()
+        self.later_consent, self.consent_reads = None, 0  # consent seen after the first read
         self.tenants, self.audits, self.hitl, self.llm_calls = [], [], [], []
 
     @asynccontextmanager
@@ -65,7 +66,8 @@ class _World:
 
     async def current_consent(self, user_id, db):
         assert (user_id, db) == ("u1", SHARED)
-        return self.consent
+        self.consent_reads += 1
+        return self.later_consent if self.consent_reads > 1 and self.later_consent else self.consent
 
     async def tenant_db(self, schema_name):
         self.tenants.append(schema_name)
@@ -155,3 +157,14 @@ def test_full_consent_goes_on_to_the_resume_tailoring_path(task):
     _apply()
 
     assert task.audits == [] and len(task.llm_calls) == 1  # parse_master_resume reached
+
+
+def test_a_withdrawal_during_the_run_stops_llm_use_for_the_remaining_jobs(task):
+    """Consent is read again before each job's resume tailoring (SEC-002/CRA-004)."""
+    task.later_consent = _consent(llm=False)
+    task.tenant = _Tenant(_prefs(hitl=False), 0, [], [_job(), _job()], None,
+                          SimpleNamespace(minio_key="k"))
+    _apply()
+
+    assert task.llm_calls == []
+    assert task.audits == [_enforced("llm_processing")]

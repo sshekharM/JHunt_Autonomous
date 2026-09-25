@@ -6,7 +6,6 @@ side effects here (preference off, account deletion scheduled) follow from it.
 """
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,13 +15,14 @@ from app.compliance.consent_store import Withdrawal
 from app.compliance.deletion import DeletionMode, execute_deletion
 from app.database import get_tenant_db
 from app.models.user import User
+from app.schemas.consent import DeletionSummary
 from app.tenant_models.profile import UserPreferences
 
 
 @dataclass(frozen=True)
 class WithdrawalOutcome:
     withdrawal: Withdrawal
-    account_deletion: dict[str, Any] | None  # soft-delete summary when data_processing went
+    account_deletion: DeletionSummary | None  # set when data_processing was withdrawn
 
 
 async def disable_auto_apply(schema_name: str) -> None:
@@ -36,11 +36,16 @@ async def disable_auto_apply(schema_name: str) -> None:
 async def withdraw(
     user: User, scopes: Iterable[str], ip_address: str, user_agent: str, db: AsyncSession,
 ) -> WithdrawalOutcome:
+    scopes = list(scopes)
     withdrawal = await consent_store.withdraw_consent(user.id, scopes, ip_address, user_agent, db)
-    if "auto_apply" in withdrawal.withdrawn:
+    # Driven by the resulting consent, not by what this call changed: the row is
+    # committed first, so a retry must still finish a side effect that failed.
+    off = {s for s in scopes if not consent_store.consent_allows(withdrawal.record, s)}
+    if "auto_apply" in off:
         await disable_auto_apply(user.schema_name)
     deletion = None
-    if "data_processing" in withdrawal.withdrawn:
+    if "data_processing" in off:
         # Existing entry point: deactivates the account and schedules hard delete.
-        deletion = await execute_deletion(user, DeletionMode.soft_delete, db)
+        summary = await execute_deletion(user, DeletionMode.soft_delete, db)
+        deletion = DeletionSummary.model_validate(summary)
     return WithdrawalOutcome(withdrawal=withdrawal, account_deletion=deletion)

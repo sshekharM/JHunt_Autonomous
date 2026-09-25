@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 
 from sqlalchemy import select
@@ -78,7 +78,7 @@ async def current_consent(user_id: str, db: AsyncSession) -> ConsentRecord | Non
     result = await db.execute(
         select(ConsentRecord)
         .where(ConsentRecord.user_id == user_id)
-        .order_by(ConsentRecord.consented_at.desc())
+        .order_by(ConsentRecord.consented_at.desc(), ConsentRecord.id.desc())
         .limit(1)
     )
     return result.scalar_one_or_none()
@@ -88,7 +88,7 @@ async def consent_history(user_id: str, db: AsyncSession) -> list[ConsentRecord]
     result = await db.execute(
         select(ConsentRecord)
         .where(ConsentRecord.user_id == user_id)
-        .order_by(ConsentRecord.consented_at.asc())
+        .order_by(ConsentRecord.consented_at.asc(), ConsentRecord.id.asc())
     )
     return list(result.scalars().all())
 
@@ -97,7 +97,8 @@ def consent_allows(record: ConsentRecord | None, scope: str) -> bool:
     """Every scope needs data processing consent too; no record allows nothing."""
     if record is None or not record.consented_to_data_processing:
         return False
-    return bool(getattr(record, CONSENT_SCOPES[scope]))
+    column = CONSENT_SCOPES.get(scope)
+    return column is not None and bool(getattr(record, column))
 
 
 def _checked_scopes(scopes: Iterable[str]) -> tuple[str, ...]:
@@ -108,6 +109,11 @@ def _checked_scopes(scopes: Iterable[str]) -> tuple[str, ...]:
     return wanted
 
 
+def _after(previous: datetime) -> datetime:
+    """Now, but never at or before the record being replaced (hosts' clocks can differ)."""
+    return max(datetime.now(timezone.utc), previous + timedelta(microseconds=1))
+
+
 def _withdrawal_row(latest: ConsentRecord, scopes: tuple[str, ...],
                     ip_address: str, user_agent: str) -> ConsentRecord:
     flags = {col: getattr(latest, col) for col in CONSENT_SCOPES.values()}
@@ -116,7 +122,7 @@ def _withdrawal_row(latest: ConsentRecord, scopes: tuple[str, ...],
         user_id=latest.user_id, event="withdrawn", ip_address=ip_address,
         user_agent=user_agent, llm_choice=latest.llm_choice,
         consent_version=latest.consent_version, consent_text_hash=latest.consent_text_hash,
-        consented_at=datetime.now(timezone.utc), **flags,
+        consented_at=_after(latest.consented_at), **flags,
     )
 
 

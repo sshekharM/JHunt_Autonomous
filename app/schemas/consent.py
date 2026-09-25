@@ -1,6 +1,6 @@
 """Request/response models for /api/consent (CHG-007)."""
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,7 +30,14 @@ class ConsentView(BaseModel):
     history: list[ConsentEntry]
 
 
+class DeletionSummary(BaseModel):
+    """What execute_deletion reports for the soft delete a data_processing withdrawal starts."""
+    mode: str
+    message: str
+    hard_delete_after: str | None = None
+
+
 class WithdrawConsentResponse(BaseModel):
     withdrawn: list[str]
     current: ConsentFlags
-    account_deletion: dict[str, Any] | None
+    account_deletion: DeletionSummary | None

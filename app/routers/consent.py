@@ -21,6 +21,9 @@ from app.services import consent_service
 
 router = APIRouter(prefix="/api/consent", tags=["consent"])
 
+# Column sizes of consent_records.ip_address / user_agent
+IP_MAX, USER_AGENT_MAX = 45, 512
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 SharedDB = Annotated[AsyncSession, Depends(get_db)]
 
@@ -35,8 +38,9 @@ async def get_consent(
     db: SharedDB,
 ) -> ConsentView:
     history = await consent_store.consent_history(user.id, db)
+    current = await consent_store.current_consent(user.id, db)
     return ConsentView(
-        current=_flags(history[-1]) if history else None,
+        current=_flags(current) if current else None,
         history=[ConsentEntry(event=r.event, flags=_flags(r), at=r.consented_at) for r in history],
     )
 
@@ -51,8 +55,8 @@ async def withdraw_consent(
     try:
         outcome = await consent_service.withdraw(
             user, body.scopes,
-            request.client.host if request.client else "unknown",
-            request.headers.get("user-agent", ""),
+            (request.client.host if request.client else "unknown")[:IP_MAX],
+            request.headers.get("user-agent", "")[:USER_AGENT_MAX],
             db,
         )
     except NoConsentOnRecord:
