@@ -6,6 +6,7 @@ a live PostgreSQL instance.  The ON CONFLICT DO UPDATE path is tested against
 a PostgreSQL-compatible approach using a mock of the pg_insert dialect call.
 """
 import os
+
 from cryptography.fernet import Fernet
 
 # Must be set before app.config is imported (happens transitively via job_service)
@@ -14,11 +15,9 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("MINIO_SECRET_KEY", "testminiocredential")
 os.environ.setdefault("FERNET_KEY", Fernet.generate_key().decode())
 
-import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch, call
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -170,8 +169,8 @@ class TestStoreJobsPayload:
     @pytest.mark.asyncio
     async def test_portal_is_passed_per_job(self, mock_db):
         """Ensure the portal name from the argument is embedded in each upsert."""
+
         from app.services.job_service import store_jobs
-        import sqlalchemy
 
         captured_statements = []
 

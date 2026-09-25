@@ -51,7 +51,7 @@ def test_search_path_sql_rejects_bad_name(name):
 
 @pytest.mark.asyncio
 async def test_get_tenant_db_rejects_bad_name_before_any_sql():
-    import app.database as database
+    from app import database
     session = MagicMock(execute=AsyncMock(), close=AsyncMock())
     factory = MagicMock()
     factory.return_value.__aenter__ = AsyncMock(return_value=session)
@@ -65,7 +65,7 @@ async def test_get_tenant_db_rejects_bad_name_before_any_sql():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name,ok", [(VALID, True), ("public", False)])
 async def test_provision_user_schema_validates_name(name, ok):
-    import app.database as database
+    from app import database
     conn = MagicMock(execute=AsyncMock())
     engine = MagicMock()
     engine.begin.return_value.__aenter__ = AsyncMock(return_value=conn)
@@ -109,6 +109,7 @@ def test_checkin_ignores_invalidated_connection():
 
 def test_checkin_hook_is_registered_on_engine_pool():
     from sqlalchemy import event
+
     from app.database import _reset_search_path, engine
     assert event.contains(engine.sync_engine, "checkin", _reset_search_path)
 
@@ -131,7 +132,7 @@ def test_sessions_do_not_expire_objects_on_commit():
 
 
 def test_tenant_session_carries_validated_schema():
-    import app.database as database
+    from app import database
     factory = MagicMock()
     with patch.object(database, "AsyncSessionLocal", factory):
         database.tenant_session(VALID)
@@ -161,5 +162,6 @@ def test_shared_session_transactions_are_left_alone():
 def test_tenant_scope_hook_is_registered_on_sessions():
     from sqlalchemy import event
     from sqlalchemy.orm import Session
+
     from app.database import _scope_transaction_to_tenant
     assert event.contains(Session, "after_begin", _scope_transaction_to_tenant)

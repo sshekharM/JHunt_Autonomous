@@ -2,12 +2,10 @@
 Unit tests for resume_service.
 All external I/O (MinIO, LLM, Playwright) is mocked.
 """
-import io
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # parse_master_resume

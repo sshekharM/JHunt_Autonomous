@@ -100,6 +100,7 @@ def _resume(key):
 @pytest.mark.asyncio
 async def test_failed_object_delete_leaves_row_unpurged():
     from datetime import datetime, timezone
+
     from app.tasks import ml_retrain
     ok, bad = _resume("u/ok.pdf"), _resume("u/bad.pdf")
     session = MagicMock(commit=AsyncMock())

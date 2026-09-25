@@ -1,7 +1,14 @@
-import pytest
 from unittest.mock import MagicMock
-from app.billing.plans import PLANS, Plan
-from app.billing.gates import can_use_portal, can_apply_today, can_use_llm_api, activate_plan
+
+import pytest
+
+from app.billing.gates import (
+    activate_plan,
+    can_apply_today,
+    can_use_llm_api,
+    can_use_portal,
+)
+from app.billing.plans import PLANS
 from app.models.user import UserTier
 
 

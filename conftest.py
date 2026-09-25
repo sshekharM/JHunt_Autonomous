@@ -3,6 +3,7 @@ Root conftest — sets minimum env vars before any app module is imported.
 Must run before tests/conftest.py which imports app.main.
 """
 import os
+
 from cryptography.fernet import Fernet
 
 os.environ.setdefault("APP_SECRET_KEY", "test-secret-key-32-bytes-xxxxxxxx")

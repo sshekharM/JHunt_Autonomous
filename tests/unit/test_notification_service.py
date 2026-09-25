@@ -1,14 +1,12 @@
 """
 Unit tests for notification_service.
 """
-import uuid
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.tenant_models.notification import NotificationChannel
-
 
 # ---------------------------------------------------------------------------
 # Helpers
