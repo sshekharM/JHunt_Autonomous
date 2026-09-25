@@ -108,3 +108,55 @@ def test_a_pause_that_has_ended_is_cleared_and_the_run_goes_on(world, until):
 
     assert world.tenant.prefs.auto_apply_paused is False and world.tenant.prefs.pause_until is None
     assert world.tenant.commits == 1 and world.tenant.executed > 1
+
+
+def _unpaused_prefs():
+    return SimpleNamespace(auto_apply_enabled=True, auto_apply_paused=False, pause_until=None,
+                           hitl_enabled=True, apply_cap_daily=5, match_threshold=0.7,
+                           llm_choice=SimpleNamespace(value="self_hosted"))
+
+
+class _RecordingTenant:
+    """Records the compiled SQL of every statement so the matched-jobs query's
+    WHERE clause can be pinned -- in particular that excluding already-applied
+    job ids never degrades to a Python-evaluated literal bool (BUG-003)."""
+
+    def __init__(self, prefs, applied_job_ids):
+        self.prefs, self.applied_job_ids = prefs, applied_job_ids
+        self.executed, self.statements = 0, []
+
+    async def execute(self, stmt):
+        self.executed += 1
+        self.statements.append(str(stmt.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )))
+        if self.executed == 1:
+            return SimpleNamespace(scalar_one_or_none=lambda: self.prefs)
+        if self.executed == 2:
+            return SimpleNamespace(scalar_one=lambda: 0)
+        if self.executed == 3:
+            rows = [(job_id,) for job_id in self.applied_job_ids]
+            return SimpleNamespace(fetchall=lambda: rows)
+        # The matched-jobs query itself, and anything after: no jobs -> the run stops.
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=list))
+
+    async def commit(self):
+        pass
+
+
+def test_jobs_query_excludes_applied_ids_with_a_sql_not_in_clause(world):
+    world.tenant = _RecordingTenant(_unpaused_prefs(), applied_job_ids={"j1", "j2"})
+    auto_apply.apply_matched_jobs.run("u1", "u_a")
+
+    jobs_sql = world.tenant.statements[3]
+    assert "jobs.id NOT IN" in jobs_sql
+    assert "'j1'" in jobs_sql and "'j2'" in jobs_sql
+
+
+def test_jobs_query_has_no_not_in_clause_when_nothing_is_applied_yet(world):
+    world.tenant = _RecordingTenant(_unpaused_prefs(), applied_job_ids=set())
+    auto_apply.apply_matched_jobs.run("u1", "u_a")
+
+    jobs_sql = world.tenant.statements[3]
+    assert "NOT IN" not in jobs_sql
+    assert "WHERE jobs.is_active IS true AND jobs.match_score >= 0.7" in jobs_sql

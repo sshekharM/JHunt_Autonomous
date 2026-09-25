@@ -136,13 +136,16 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                 )
                 applied_job_ids = {r[0] for r in applied_job_ids_result.fetchall()}
 
+                job_filters = [
+                    MatchedJob.is_active.is_(True),
+                    MatchedJob.match_score >= prefs.match_threshold,
+                ]
+                if applied_job_ids:
+                    job_filters.append(MatchedJob.id.not_in(applied_job_ids))
+
                 jobs_result = await tenant_db.execute(
                     select(MatchedJob)
-                    .where(
-                        MatchedJob.is_active == True,
-                        MatchedJob.match_score >= prefs.match_threshold,
-                        MatchedJob.id.not_in(applied_job_ids) if applied_job_ids else True,
-                    )
+                    .where(*job_filters)
                     .order_by(MatchedJob.match_score.desc())
                     .limit(remaining_cap)
                 )
