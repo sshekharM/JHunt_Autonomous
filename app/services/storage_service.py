@@ -37,7 +37,10 @@ async def download_resume(key: str) -> bytes:
 
 
 async def delete_object(key: str) -> None:
+    """Delete a resume object. A missing object counts as deleted; any other
+    storage error is raised so callers never record a failed delete as done."""
     try:
         _client.remove_object(settings.minio_bucket_resumes, key)
-    except S3Error:
-        pass
+    except S3Error as exc:
+        if exc.code != "NoSuchKey":
+            raise
