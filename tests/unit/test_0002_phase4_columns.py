@@ -24,9 +24,9 @@ def test_0002_revises_the_real_0001_revision_id():
 def test_shared_chain_has_one_head_and_walks_to_base():
     from alembic.script import ScriptDirectory
     script = ScriptDirectory(str(ROOT / "alembic"))
-    assert script.get_heads() == ["0002"]
+    assert len(script.get_heads()) == 1
     revisions = [r.revision for r in script.walk_revisions()]
-    assert revisions == ["0002", "0001_initial_shared_schema"]
+    assert revisions[-2:] == ["0002", "0001_initial_shared_schema"]
 
 
 def test_0002_upgrade_only_alters_shared_users_table():

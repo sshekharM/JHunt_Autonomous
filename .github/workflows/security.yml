@@ -43,12 +43,7 @@ jobs:
           #   python36-compatibility-*   - project targets Python 3.12.
           #   writable-filesystem-service - read_only containers deferred until each
           #     service's writable paths are mapped (tmpfs/volumes); tracked follow-up.
-          # Excluded file (temporary):
-          #   alembic/versions/0001 - downgrade drops enum types with f-string SQL over a
-          #     literal name list; replace with postgresql.ENUM(...).drop() in the shared
-          #     migration drift fix, then remove this --exclude.
           semgrep scan --config p/default --error --metrics=off \
-            --exclude alembic/versions/0001_initial_shared_schema.py \
             --exclude-rule python.lang.compatibility.python36.python36-compatibility-Popen1 \
             --exclude-rule python.lang.compatibility.python36.python36-compatibility-Popen2 \
             --exclude-rule yaml.docker-compose.security.writable-filesystem-service.writable-filesystem-service

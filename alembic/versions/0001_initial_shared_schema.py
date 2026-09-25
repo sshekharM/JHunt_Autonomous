@@ -248,4 +248,4 @@ def downgrade() -> None:
         "user_tier_enum",
         "oauth_provider_enum",
     ):
-        op.execute(f"DROP TYPE IF EXISTS {enum_name}")
+        postgresql.ENUM(name=enum_name).drop(op.get_bind(), checkfirst=True)

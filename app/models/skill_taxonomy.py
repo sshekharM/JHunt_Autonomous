@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Enum as SAEnum, Text
+from sqlalchemy import String, DateTime, Enum as SAEnum, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import enum
@@ -21,11 +21,12 @@ class TaxonomySource(str, enum.Enum):
 
 class SkillTaxonomy(Base):
     __tablename__ = "skill_taxonomy"
+    __table_args__ = (UniqueConstraint("skill_name", name="uq_skill_taxonomy_skill_name"),)
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    skill_name: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    skill_name: Mapped[str] = mapped_column(String(256), index=True)
     category: Mapped[str] = mapped_column(String(128))
     subcategory: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source: Mapped[TaxonomySource] = mapped_column(
