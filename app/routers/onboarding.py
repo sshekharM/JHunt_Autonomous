@@ -299,6 +299,9 @@ async def step9_consent(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if user.onboarding_complete:
+        # A replay would append a fresh grant and undo a withdrawal (CHG-007).
+        raise HTTPException(status_code=409, detail="Consent was already recorded.")
     if not data.consented_to_data_processing:
         raise HTTPException(status_code=400, detail="Consent to data processing is required.")
 

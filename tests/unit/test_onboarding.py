@@ -322,6 +322,31 @@ def test_step9_consent_completes_and_redirects(wired, monkeypatch):
     assert recorded["ip_address"] == "1.2.3.4"
 
 
+def test_step9_cannot_be_replayed_to_grant_consent_again(wired, monkeypatch):
+    """CHG-007: after onboarding, step 9 must not append a fresh grant that would
+    silently reverse a consent withdrawal (re-granting is out of scope)."""
+    recorded = []
+
+    async def fake_record_consent(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(onboarding, "record_consent", fake_record_consent)
+    user = _tenant_user()
+    user.onboarding_complete = True
+    data = onboarding.Step9ConsentData(
+        consented_to_data_processing=True,
+        consented_to_auto_apply=True,
+        consented_to_llm_processing=True,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())
+        )
+    assert exc.value.status_code == 409
+    assert recorded == []
+
+
 def test_get_onboarding_status_reports_user_state():
     user = SimpleNamespace(onboarding_step=3, onboarding_complete=False, thumbprint="tp123")
     result = asyncio.run(onboarding.get_onboarding_status(user=user))
