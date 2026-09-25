@@ -15,7 +15,7 @@ VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 CHAIN = [
     "0001_initial_shared_schema.py", "0002_phase4_columns.py",
     "0003_align_shared_schema_with_models.py", "0004_encrypt_totp_secret.py",
-    "0005_totp_lockout.py",
+    "0005_totp_lockout.py", "0006_consent_withdrawal.py",
 ]
 
 

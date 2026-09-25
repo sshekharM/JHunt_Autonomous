@@ -31,3 +31,5 @@ class ConsentRecord(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     consent_text_hash: Mapped[str] = mapped_column(String(64))
+    # 'granted' or 'withdrawn' (CHG-007, migration 0006); rows are never updated
+    event: Mapped[str] = mapped_column(String(16), default="granted", server_default="granted")
