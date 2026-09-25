@@ -237,6 +237,10 @@ drops a user's empty entry, so the registry no longer grows forever.
 `push_to_user` now logs a failed send (`notifications.ws_push_failed`)
 instead of dropping it silently.
 
+**Still open (deployment):** `nginx/nginx.conf` sets the WebSocket upgrade
+headers only under `location /ws/`, but this route lives under `/api/`. The
+handshake probably cannot complete behind the shipped proxy.
+
 ---
 
 ## Structural risks

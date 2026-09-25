@@ -139,6 +139,18 @@ def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONRespo
     return setup
 
 
+async def _pending_2fa_user(pending_2fa: Optional[str], db: AsyncSession) -> User:
+    """User named by a valid pending_2fa cookie; a token for an already-verified user is spent."""
+    user_id = decode_pending_2fa_token(pending_2fa)
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.totp_verified:
+        raise HTTPException(status_code=401, detail="Pending 2FA session already used.")
+    return user
+
+
 @router.post("/totp/verify")
 @limiter.limit("10/minute")
 async def verify_totp_code(
@@ -147,11 +159,7 @@ async def verify_totp_code(
     pending_2fa: Optional[str] = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    user_id = decode_pending_2fa_token(pending_2fa)
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
+    user = await _pending_2fa_user(pending_2fa, db)
     if not verify_totp(user.totp_secret, code):
         audit("auth.totp_failed", user_id=user.id)
         raise HTTPException(status_code=400, detail="Invalid TOTP code.")

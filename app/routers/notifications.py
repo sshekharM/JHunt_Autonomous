@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from app.database import get_db, get_tenant_db
 from app.models.user import User
 from app.dependencies import get_current_user
-from app.services.auth_service import decode_access_token, session_user_id
+from app.services.auth_service import session_user_id
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 logger = structlog.get_logger("routers.notifications")

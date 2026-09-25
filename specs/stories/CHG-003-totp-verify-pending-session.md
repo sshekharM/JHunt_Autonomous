@@ -37,6 +37,11 @@ makes this worse (`specs/brownfield/risk-map.md` R17).
    returns 401 for any JWT that has a `purpose` claim.
 7. Users who have already verified TOTP log in the same way as before: the
    OAuth callback redirects them with an `access_token` cookie.
+8. A pending token can be used only once. When its user already has
+   `totp_verified = True`, the verify endpoint returns 401 and issues no
+   session. This was added from review findings SEC-R17-01 and CRB-004.
+   `get_current_admin` also refuses tokens that have a `purpose` claim
+   (review finding CRB-001).
 
 ## Out of scope
 
@@ -49,3 +54,34 @@ makes this worse (`specs/brownfield/risk-map.md` R17).
 - Frontend changes. The repo has no web frontend: no HTML or JS is tracked, and
   nothing calls `/totp/verify`. Any future client must send only `code` and
   rely on the browser sending the `pending_2fa` cookie.
+
+## Implementation Status
+
+Status: COMPLETE
+Implemented: 2026-09-24 (branch `fix/auth-bypass`, commits aa9274d and the
+review follow-up)
+Files changed: app/services/auth_service.py, app/routers/auth.py,
+app/dependencies.py
+Tests added: tests/unit/test_auth.py, tests/unit/test_auth_service.py,
+tests/unit/test_dependencies.py
+AC coverage:
+  - AC1: test_callback_for_unverified_user_sets_a_short_lived_pending_cookie,
+    test_pending_token_is_purpose_bound_and_lives_ten_minutes
+  - AC2: test_verify_without_pending_cookie_is_401_even_with_a_user_id,
+    test_verify_derives_the_user_from_the_cookie_not_a_user_id_param
+  - AC3: test_verify_rejects_anything_but_a_valid_pending_token[*],
+    test_pending_decode_refuses_everything_else_with_401[*]
+  - AC4: test_verify_with_pending_token_and_good_code_opens_a_session
+  - AC5: test_verify_with_bad_code_is_400_and_audited,
+    test_verify_keeps_its_rate_limit_of_ten_per_minute
+  - AC6: test_non_session_tokens_are_refused_before_lookup[*],
+    test_session_decode_refuses_purpose_bound_or_subjectless_tokens[*]
+  - AC7: test_callback_for_verified_user_still_logs_straight_in[*]
+  - AC8: test_pending_token_cannot_be_replayed_once_totp_is_verified,
+    test_non_admin_tokens_are_401_before_lookup[purpose-bound]
+
+Follow-ups raised in review, not done here:
+- `code` is a query parameter, so TOTP codes show up in access logs. Move it
+  to a request body.
+- TOTP attempts are rate-limited only per IP. There is no lockout per account
+  and no cache of codes already used.

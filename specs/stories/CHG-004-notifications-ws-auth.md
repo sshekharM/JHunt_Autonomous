@@ -44,3 +44,29 @@ whoever connected. The disconnect handler also does
 - Frontend changes. The repo has no web client that opens this socket. A
   same-origin client only has to let the browser send the `access_token`
   cookie.
+
+## Implementation Status
+
+Status: COMPLETE
+Implemented: 2026-09-24 (branch `fix/auth-bypass`, commit b02ef98 and the
+review follow-up)
+Files changed: app/routers/notifications.py
+Tests added: tests/unit/test_notifications.py
+AC coverage:
+  - AC1/AC2: test_unauthorised_handshake_is_closed_1008_unaccepted_and_unregistered[*],
+    test_handshake_over_http_is_rejected_with_1008
+  - AC3: test_authorised_socket_is_registered_pinged_then_removed
+  - AC4: test_disconnect_keeps_the_users_other_sockets,
+    test_disconnect_with_a_missing_registry_entry_does_not_raise[*]
+  - AC5: test_push_logs_a_failed_socket_and_still_reaches_the_rest
+
+Notes from review:
+- The handler closes the socket before `accept()`. Under uvicorn, that makes
+  the server reject the handshake with HTTP 403, so code 1008 never reaches a
+  real client. Starlette's TestClient reports the close as 1008. Either way
+  the connection is denied (CRB-003).
+- The nginx config sets the upgrade headers only under `location /ws/`, but
+  this route lives under `/api/`. So the WebSocket handshake probably cannot
+  complete behind the shipped proxy, which means this control has not yet run
+  in a proxied deployment. This is a pre-existing deployment gap, raised by
+  the security review and not fixed here.

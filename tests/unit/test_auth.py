@@ -272,6 +272,23 @@ def test_verify_with_pending_token_and_good_code_opens_a_session(api):
     assert api.events == ["auth.totp_verified"]
 
 
+def test_verify_derives_the_user_from_the_cookie_not_a_user_id_param(api):
+    response = _verify(api, token=create_pending_2fa_token(USER_ID), params={"user_id": "victim-9"})
+
+    assert response.status_code == 200
+    [lookup] = api.db.statements
+    assert f"users.id = '{USER_ID}'" in _sql(lookup) and "victim-9" not in _sql(lookup)
+
+
+def test_pending_token_cannot_be_replayed_once_totp_is_verified(api):
+    api.db.user = _user(verified=True)
+    response = _verify(api, token=create_pending_2fa_token(USER_ID))
+
+    assert response.status_code == 401
+    assert api.db.commits == 0 and _cookies(response, "access_token") == []
+    assert api.events == []
+
+
 def test_verify_for_an_onboarded_user_redirects_to_the_dashboard(api):
     api.db.user = _user(onboarded=True)
     response = _verify(api, token=create_pending_2fa_token(USER_ID))

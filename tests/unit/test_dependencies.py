@@ -103,8 +103,11 @@ def test_admin_token_resolves_the_admin_by_id():
     assert f"admin_users.id = '{ADMIN_ID}'" in _sql(db.statements[0])
 
 
-@pytest.mark.parametrize("token", [None, create_access_token({"sub": USER_ID})],
-                         ids=["missing", "user-token"])
+@pytest.mark.parametrize("token", [
+    None,
+    create_access_token({"sub": USER_ID}),
+    create_access_token({"admin_sub": ADMIN_ID, "purpose": "totp_setup"}),
+], ids=["missing", "user-token", "purpose-bound"])
 def test_non_admin_tokens_are_401_before_lookup(token):
     db = _FakeDB(_admin())
 

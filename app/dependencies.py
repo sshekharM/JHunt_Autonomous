@@ -37,7 +37,7 @@ async def get_current_admin(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
     payload = decode_access_token(access_token)
     admin_id = payload.get("admin_sub")
-    if not admin_id:
+    if not admin_id or "purpose" in payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not an admin token.")
 
     result = await db.execute(select(AdminUser).where(AdminUser.id == admin_id))
