@@ -79,7 +79,7 @@ class GlassdoorCrawler(BaseCrawler):
 
             for card in cards[:20]:
                 try:
-                    job = await self._parse_card(card)
+                    job = await self._parse_card(card, location)
                     if job:
                         jobs.append(job)
                 except Exception:
@@ -94,7 +94,7 @@ class GlassdoorCrawler(BaseCrawler):
         finally:
             await page.close()
 
-    async def _parse_card(self, card) -> RawJob | None:
+    async def _parse_card(self, card, location: str) -> RawJob | None:
         try:
             title_el = await card.query_selector("a.jobLink span, a[data-test='job-title']")
             company_el = await card.query_selector("div.jobHeader a, div.employer-name")

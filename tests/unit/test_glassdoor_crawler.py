@@ -108,7 +108,7 @@ async def test_search_jobs_returns_empty_list_on_navigation_error():
 async def test_parse_card_returns_none_when_title_missing():
     crawler = GlassdoorCrawler()
     card = FakeElement(children={})
-    assert await crawler._parse_card(card) is None
+    assert await crawler._parse_card(card, "Pune") is None
 
 
 @pytest.mark.asyncio
@@ -119,14 +119,14 @@ async def test_parse_card_returns_none_on_internal_exception():
         async def query_selector(self, sel):
             raise RuntimeError("dom error")
 
-    assert await crawler._parse_card(_Boom()) is None
+    assert await crawler._parse_card(_Boom(), "Pune") is None
 
 
 @pytest.mark.asyncio
 async def test_parse_card_absolute_href_kept_as_is():
     crawler = GlassdoorCrawler()
     card = _title_selector_card(href="https://external.example/job/9")
-    job = await crawler._parse_card(card)
+    job = await crawler._parse_card(card, "Pune")
     assert isinstance(job, RawJob)
     assert job.job_url == "https://external.example/job/9"
 
@@ -191,3 +191,20 @@ async def test_apply_returns_failure_receipt_on_exception():
 @pytest.mark.asyncio
 async def test_check_application_status_is_always_applied():
     assert await GlassdoorCrawler().check_application_status(context=None, portal_application_id="x") == "applied"
+
+
+@pytest.mark.asyncio
+async def test_parse_card_with_no_location_falls_back_to_search_location():
+    """A card without a location element keeps the job, located at the search
+    location (it used to raise NameError and be silently dropped)."""
+    card = FakeElement(
+        children={
+            "a.jobLink span, a[data-test='job-title']": FakeElement(text="Backend Engineer"),
+            "div.jobHeader a, div.employer-name": FakeElement(text="Acme Corp"),
+            "a.jobLink, a[data-test='job-title']": FakeElement(attrs={"href": "/job/123"}),
+        }
+    )
+    job = await GlassdoorCrawler()._parse_card(card, location="Bengaluru")
+
+    assert job is not None
+    assert (job.title, job.company, job.location) == ("Backend Engineer", "Acme Corp", "Bengaluru")
