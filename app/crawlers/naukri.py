@@ -4,17 +4,21 @@ Uses httpx for job search (server-rendered pages) and
 Playwright for session-dependent actions (login, apply).
 """
 import re
-import json
-from typing import Optional
-from datetime import datetime, timezone
+
 import httpx
+import structlog
 from bs4 import BeautifulSoup
 from playwright.async_api import BrowserContext
-from app.crawlers.base import BaseCrawler, RawJob, ApplicationReceipt
-from app.crawlers.anti_detection import human_delay, human_type, random_scroll, micro_delay
+
+from app.crawlers.anti_detection import (
+    human_delay,
+    human_type,
+    micro_delay,
+    random_scroll,
+)
+from app.crawlers.base import ApplicationReceipt, BaseCrawler, RawJob
 from app.crawlers.session_manager import save_session_cookies
 from app.security.audit_log import audit
-import structlog
 
 logger = structlog.get_logger("crawlers.naukri")
 
@@ -28,7 +32,6 @@ class NaukriCrawler(BaseCrawler):
     async def login(self, context: BrowserContext) -> bool:
         """Log in to Naukri using system credentials via Playwright."""
         from app.config import settings
-        from app.security.encryption import decrypt
 
         page = await context.new_page()
         try:
@@ -196,8 +199,8 @@ class NaukriCrawler(BaseCrawler):
         context: BrowserContext,
         job: RawJob,
         user_profile: dict,
-        resume_path: Optional[str] = None,
-        cover_letter: Optional[str] = None,
+        resume_path: str | None = None,
+        cover_letter: str | None = None,
     ) -> ApplicationReceipt:
         """Apply to a Naukri job via Playwright using the user's personal session."""
         page = await context.new_page()
@@ -296,7 +299,7 @@ class NaukriCrawler(BaseCrawler):
                 missing.append(text[:100])
         return missing
 
-    async def _extract_application_id(self, page) -> Optional[str]:
+    async def _extract_application_id(self, page) -> str | None:
         """Try to extract a Naukri application confirmation ID from the page."""
         try:
             content = await page.content()

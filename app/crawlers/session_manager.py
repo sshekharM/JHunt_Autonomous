@@ -2,25 +2,28 @@
 Playwright browser pool + Redis-backed session persistence.
 System portal accounts use this; user personal sessions use separate contexts.
 """
-import json
 import asyncio
-from typing import Optional, Dict
-from playwright.async_api import async_playwright, Browser, BrowserContext, Playwright
+import json
+
 import redis.asyncio as aioredis
+import structlog
+from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
+
 from app.config import settings
-from app.security.encryption import encrypt, decrypt
 from app.crawlers.anti_detection import (
-    random_user_agent, random_viewport, configure_stealth_context
+    configure_stealth_context,
+    random_user_agent,
+    random_viewport,
 )
 from app.security.audit_log import audit
-import structlog
+from app.security.encryption import decrypt, encrypt
 
 logger = structlog.get_logger("crawlers.session_manager")
 
-_redis: Optional[aioredis.Redis] = None
-_playwright: Optional[Playwright] = None
-_browser: Optional[Browser] = None
-_context_pool: Dict[str, BrowserContext] = {}
+_redis: aioredis.Redis | None = None
+_playwright: Playwright | None = None
+_browser: Browser | None = None
+_context_pool: dict[str, BrowserContext] = {}
 _pool_lock = asyncio.Lock()
 
 
@@ -92,7 +95,7 @@ async def save_session_cookies(portal: str, context: BrowserContext) -> None:
     logger.info("session_manager.cookies_saved", portal=portal, cookie_count=len(cookies))
 
 
-async def load_session_cookies(portal: str) -> Optional[list]:
+async def load_session_cookies(portal: str) -> list | None:
     """Load and decrypt session cookies from Redis."""
     redis = await _get_redis()
     raw = await redis.get(f"portal_session:{portal}")
@@ -154,7 +157,7 @@ async def save_crawl_state(portal: str, state: dict) -> None:
     await redis.set(f"crawl_state:{portal}", json.dumps(state), ex=3600 * 24)
 
 
-async def load_crawl_state(portal: str) -> Optional[dict]:
+async def load_crawl_state(portal: str) -> dict | None:
     """Load saved crawler state."""
     redis = await _get_redis()
     raw = await redis.get(f"crawl_state:{portal}")

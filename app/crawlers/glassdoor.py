@@ -3,13 +3,19 @@ Glassdoor crawler — Playwright-based.
 Glassdoor heavily relies on JS rendering and has login walls for full job details.
 """
 import re
-from typing import Optional
+
+import structlog
 from playwright.async_api import BrowserContext
-from app.crawlers.base import BaseCrawler, RawJob, ApplicationReceipt
-from app.crawlers.anti_detection import human_delay, human_type, random_scroll, micro_delay
+
+from app.crawlers.anti_detection import (
+    human_delay,
+    human_type,
+    micro_delay,
+    random_scroll,
+)
+from app.crawlers.base import ApplicationReceipt, BaseCrawler, RawJob
 from app.crawlers.session_manager import save_session_cookies
 from app.security.audit_log import audit
-import structlog
 
 logger = structlog.get_logger("crawlers.glassdoor")
 
@@ -88,7 +94,7 @@ class GlassdoorCrawler(BaseCrawler):
         finally:
             await page.close()
 
-    async def _parse_card(self, card) -> Optional[RawJob]:
+    async def _parse_card(self, card) -> RawJob | None:
         try:
             title_el = await card.query_selector("a.jobLink span, a[data-test='job-title']")
             company_el = await card.query_selector("div.jobHeader a, div.employer-name")
@@ -118,8 +124,8 @@ class GlassdoorCrawler(BaseCrawler):
         context: BrowserContext,
         job: RawJob,
         user_profile: dict,
-        resume_path: Optional[str] = None,
-        cover_letter: Optional[str] = None,
+        resume_path: str | None = None,
+        cover_letter: str | None = None,
     ) -> ApplicationReceipt:
         """Glassdoor typically redirects to the company's ATS — flag as manual."""
         page = await context.new_page()
