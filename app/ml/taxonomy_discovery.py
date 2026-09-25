@@ -4,12 +4,12 @@ Extracts candidate skill terms not yet in the taxonomy.
 Queues them for admin review before they are added.
 """
 import re
-import json
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
-from app.models.skill_taxonomy import SkillTaxonomy, TaxonomyStatus, TaxonomySource
+
 import structlog
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.skill_taxonomy import SkillTaxonomy, TaxonomySource, TaxonomyStatus
 
 logger = structlog.get_logger("ml.taxonomy_discovery")
 

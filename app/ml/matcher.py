@@ -7,11 +7,11 @@ Output: match score (0.0–1.0) + explainability dict
 
 Phase 2 (sentence-transformers semantic similarity) is scaffolded below.
 """
+
+import numpy as np
+import structlog
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-from typing import Optional
-import structlog
 
 logger = structlog.get_logger("ml.matcher")
 

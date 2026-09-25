@@ -19,7 +19,6 @@ async def send_message(chat_id: str, text: str) -> bool:
     if not settings.telegram_bot_token:
         return False
     try:
-        from telegram.error import TelegramError
         await get_bot().send_message(chat_id=chat_id, text=text, parse_mode="HTML")
         logger.info("telegram.sent", chat_id=chat_id)
         return True
