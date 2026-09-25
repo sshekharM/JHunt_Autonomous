@@ -80,6 +80,45 @@ def decode_access_token(token: str) -> dict:
         ) from exc
 
 
+PENDING_2FA_PURPOSE = "totp_setup"
+PENDING_2FA_TTL = timedelta(minutes=10)
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def create_pending_2fa_token(user_id: str) -> str:
+    """Short-lived token proving OAuth succeeded while TOTP setup is outstanding."""
+    return create_access_token(
+        {"sub": user_id, "purpose": PENDING_2FA_PURPOSE}, PENDING_2FA_TTL
+    )
+
+
+def decode_pending_2fa_token(token: Optional[str]) -> str:
+    """Return the user id of a valid pending-2FA token, else raise 401."""
+    if not token:
+        raise _unauthorized("No pending 2FA session.")
+    payload = decode_access_token(token)
+    user_id = payload.get("sub")
+    if payload.get("purpose") != PENDING_2FA_PURPOSE or not user_id:
+        raise _unauthorized("Invalid pending 2FA session.")
+    return str(user_id)
+
+
+def session_user_id(token: str) -> str:
+    """Return the user id of a full session token; purpose-bound tokens are refused."""
+    payload = decode_access_token(token)
+    user_id = payload.get("sub")
+    if "purpose" in payload or not user_id:
+        raise _unauthorized("Invalid token.")
+    return str(user_id)
+
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 

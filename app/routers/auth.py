@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from typing import Optional
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse, JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db, provision_user_schema
 from app.models.user import User, OAuthProvider
-from app.services.auth_service import oauth, create_access_token, build_user_thumbprint
+from app.services.auth_service import (
+    oauth, create_access_token, build_user_thumbprint,
+    create_pending_2fa_token, decode_pending_2fa_token, PENDING_2FA_TTL,
+)
 from app.security.encryption import encrypt, sha256_hash
 from app.security.totp import generate_totp_secret, get_totp_uri, generate_qr_code_base64, verify_totp
 from app.security.audit_log import audit
@@ -15,6 +20,8 @@ import uuid
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 SUPPORTED_PROVIDERS = {"google", "linkedin", "facebook"}
+PENDING_2FA_COOKIE = "pending_2fa"
+PENDING_2FA_PATH = "/api/auth/totp"
 
 
 @router.get("/login/{provider}")
@@ -94,17 +101,7 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
         audit("user.created", user_id=user.id, details={"provider": provider})
 
     if not user.totp_verified:
-        # Return TOTP setup info
-        uri = get_totp_uri(user.totp_secret, email)
-        qr_b64 = generate_qr_code_base64(uri)
-        audit("auth.totp_setup_required", user_id=user.id)
-        return JSONResponse({
-            "action": "totp_setup",
-            "user_id": user.id,
-            "qr_code_base64": qr_b64,
-            "totp_uri": uri,
-            "is_new_user": is_new_user,
-        })
+        return _totp_setup_response(user, email, is_new_user)
 
     token_str = create_access_token({"sub": user.id})
     response = RedirectResponse(
@@ -123,19 +120,52 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
     return response
 
 
-@router.post("/totp/verify")
-@limiter.limit("10/minute")
-async def verify_totp_code(
-    request: Request,
-    user_id: str,
-    code: str,
-    db: AsyncSession = Depends(get_db),
-):
+def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONResponse:
+    """TOTP enrolment payload plus the short-lived pending_2fa cookie that /totp/verify requires."""
+    uri = get_totp_uri(user.totp_secret, email)
+    qr_b64 = generate_qr_code_base64(uri)
+    audit("auth.totp_setup_required", user_id=user.id)
+    setup = JSONResponse({
+        "action": "totp_setup",
+        "user_id": user.id,
+        "qr_code_base64": qr_b64,
+        "totp_uri": uri,
+        "is_new_user": is_new_user,
+    })
+    setup.set_cookie(
+        key=PENDING_2FA_COOKIE, value=create_pending_2fa_token(user.id),
+        httponly=True, secure=True, samesite="lax", path=PENDING_2FA_PATH,
+        max_age=int(PENDING_2FA_TTL.total_seconds()),
+    )
+    return setup
+
+
+async def _pending_2fa_user(pending_2fa: Optional[str], db: AsyncSession) -> User:
+    """User named by a valid pending_2fa cookie; a token for an already-verified user is spent."""
+    user_id = decode_pending_2fa_token(pending_2fa)
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-    if not verify_totp(user.totp_secret, code):
+    if user.totp_verified:
+        raise HTTPException(status_code=401, detail="Pending 2FA session already used.")
+    return user
+
+
+class TotpVerifyRequest(BaseModel):
+    code: str  # in the body, never the URL, so one-time codes stay out of access logs
+
+
+@router.post("/totp/verify")
+@limiter.limit("10/minute")
+async def verify_totp_code(
+    request: Request,
+    body: TotpVerifyRequest,
+    pending_2fa: Optional[str] = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _pending_2fa_user(pending_2fa, db)
+    if not verify_totp(user.totp_secret, body.code):
         audit("auth.totp_failed", user_id=user.id)
         raise HTTPException(status_code=400, detail="Invalid TOTP code.")
 
@@ -148,6 +178,10 @@ async def verify_totp_code(
     response.set_cookie(
         key="access_token", value=token_str, httponly=True,
         secure=True, samesite="lax", max_age=3600 * 8,
+    )
+    response.delete_cookie(
+        PENDING_2FA_COOKIE, path=PENDING_2FA_PATH,
+        httponly=True, secure=True, samesite="lax",
     )
     return response
 

@@ -1,91 +1,136 @@
 {
   "gate": "security",
-  "story": "CHG-002-admin-ip-allowlist",
-  "branch": "fix/admin-ip-allowlist",
-  "date": "2026-09-24",
+  "scope": {
+    "branch": "fix/auth-bypass",
+    "range": "53a8844..HEAD",
+    "stories": ["CHG-003", "CHG-004"],
+    "risks": ["R17", "R18"],
+    "files_reviewed": [
+      "app/routers/auth.py",
+      "app/services/auth_service.py",
+      "app/dependencies.py",
+      "app/routers/notifications.py",
+      "app/security/totp.py",
+      "app/security/rate_limiter.py",
+      "app/config.py",
+      "app/main.py",
+      "nginx/nginx.conf"
+    ]
+  },
   "verdict": "PASS",
   "pass": true,
   "block_severities": ["critical", "high"],
-  "scope": "uncommitted working-tree diff (git diff) + untracked tests/unit/test_ip_allowlist.py; data-flow neighbours read: app/main.py, app/dependencies.py, app/routers/auth.py, docker-compose.yml, docker-compose.prod.yml, docker-compose.windows.yml, nginx/nginx.conf, installer/core/env_writer.py, .venv uvicorn 0.29.0 proxy_headers.py",
-  "summary": { "block": 0, "warn": 2, "info": 5 },
+  "summary": { "block": 0, "warn": 1, "info": 9 },
   "findings": [
     {
-      "id": "VULN-001",
-      "severity": "medium",
+      "id": "SEC-R17-01",
+      "severity": "WARN",
       "level": "WARN",
-      "category": "authentication-bypass",
-      "file": ".env.example",
-      "line": 81,
-      "message": "The new ALLOWED_IPS guidance tells operators to trust uvicorn forwarded headers (--forwarded-allow-ips / FORWARDED_ALLOW_IPS) but does not warn that the wildcard value turns the allowlist into a client-controlled header. Installed uvicorn 0.29.0 (.venv/Lib/site-packages/uvicorn/middleware/proxy_headers.py, get_trusted_client_host) returns x_forwarded_for_hosts[0] - the LEFTMOST, fully attacker-supplied entry - when trusted_hosts contains the wildcard, while the nginx-IP form correctly returns the rightmost untrusted entry. proxy_headers is on by default (uvicorn/config.py:203,468). Because docker-compose.prod.yml gives the nginx container a dynamic bridge IP, the wildcard is the path of least resistance for an operator locked out by the intentional fail-closed 403. Not BLOCK: no file in this repo sets the wildcard today, all admin routes still require an admin session (require_role -> get_current_admin), and with the documented per-IP value the header cannot be spoofed through nginx (it appends $remote_addr last).",
-      "fix": "Extend the .env.example note: state explicitly that FORWARDED_ALLOW_IPS must name the proxy address and that the wildcard makes ALLOWED_IPS spoofable via X-Forwarded-For. Give a concrete recipe - pin the nginx container to a static address with an ipam block in docker-compose.prod.yml and set FORWARDED_ALLOW_IPS to that address plus uvicorn --forwarded-allow-ips."
+      "category": "authentication",
+      "file": "app/routers/auth.py",
+      "line": 150,
+      "description": "The pending_2fa step-up token is not single-use and cannot be revoked server-side. delete_cookie only clears the browser copy; the signed JWT stays valid for the remainder of its 10-minute TTL, and verify_totp_code does not refuse a user whose totp_verified is already True. Anyone holding a copy of the token value plus a current TOTP code can therefore re-run the endpoint and mint another 8-hour access_token without a fresh OAuth login. Exploitation requires possession of the HttpOnly/Secure/path-scoped cookie value, so this is a hardening gap rather than a directly reachable bypass. The endpoint also does not check user.is_active before issuing the session (get_current_user does, so the resulting session is unusable for REST).",
+      "fix": "Make the step-up token single-use: add a jti claim and record consumed jtis in Redis for the token TTL (or store the pending session id on the user row and clear it on success), and reject the request with 401 when user.totp_verified is already True or user.is_active is False."
     },
     {
-      "id": "VULN-002",
-      "severity": "medium",
-      "level": "WARN",
-      "category": "insecure-default",
+      "id": "SEC-R18-01",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "authorization",
+      "file": "app/routers/notifications.py",
+      "line": 43,
+      "description": "The WebSocket handshake trusts the signed session token alone: unlike get_current_user it does not reload the User row, so it never checks is_active or totp_verified. A user deactivated mid-session keeps a live notification stream until the 8-hour token expires. Impact is limited to that user's own notifications. CHG-004 records this as an accepted out-of-scope decision.",
+      "fix": "Load the user in the handshake (or maintain a session denylist checked on connect and on push) so deactivation revokes the socket, and drop the user's registry entries when the account is deactivated."
+    },
+    {
+      "id": "SEC-R18-02",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "csrf",
+      "file": "app/routers/notifications.py",
+      "line": 41,
+      "description": "The handshake performs no Origin/Host validation, so cross-site WebSocket hijacking is prevented solely by the access_token cookie being SameSite=Lax (browsers do not attach Lax cookies to cross-site WebSocket handshakes). The mitigation is real and enabled on both cookie-setting paths, so this is defence-in-depth only. Documented as out of scope in CHG-004.",
+      "fix": "Reject handshakes whose Origin header is absent or not in an allowlist (settings.frontend_url / app_base_url) before accept()."
+    },
+    {
+      "id": "SEC-R17-02",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "sensitive-data-exposure",
+      "file": "app/routers/auth.py",
+      "line": 146,
+      "description": "code is declared as a bare str, so FastAPI reads it as a query parameter: the TOTP code travels in the request URL and lands in nginx access logs, uvicorn logs and any intermediary. The code alone is now useless without the pending_2fa cookie, which keeps the impact low, but a short-lived authentication factor should not be logged.",
+      "fix": "Accept the code in a Pydantic request body model (e.g. TotpVerifyRequest) instead of a query parameter."
+    },
+    {
+      "id": "SEC-R17-03",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "authentication",
+      "file": "app/routers/auth.py",
+      "line": 143,
+      "description": "TOTP verification has no per-account throttling or lockout: the 10/minute limit is keyed on the remote address (slowapi get_remote_address), and verify_totp uses valid_window=1 with no used-code cache, so a code is replayable for roughly 90 seconds. Guessing another user's code is not reachable because the endpoint now requires that user's pending_2fa cookie, so this is residual hardening.",
+      "fix": "Add a per-user attempt counter with lockout in Redis, and record consumed (user_id, code) pairs for the validity window to prevent replay."
+    },
+    {
+      "id": "SEC-ADM-01",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "authentication",
+      "file": "app/dependencies.py",
+      "line": 38,
+      "description": "get_current_admin was not hardened alongside session_user_id: it decodes the token and only requires an admin_sub claim, without rejecting purpose-bound JWTs. Not exploitable today - pending_2fa tokens carry only sub and purpose, and no code path anywhere in app/ ever issues a token containing admin_sub (admin login is unimplemented), so the admin dependency is currently unreachable. The inconsistency becomes a token-confusion risk as soon as admin login is added.",
+      "fix": "Route admin tokens through a shared helper that rejects any token carrying a purpose claim, mirroring session_user_id."
+    },
+    {
+      "id": "SEC-OAUTH-01",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "authentication",
+      "file": "app/routers/auth.py",
+      "line": 78,
+      "description": "Pre-existing, untouched by this diff: the OAuth callback matches an existing account by email_hash only and never compares oauth_provider/oauth_sub. A provider that returns an attacker-controlled or unverified email address would let the attacker log in as an existing account created through a different provider. Noted here because it is the remaining unauthenticated-to-session path in this flow, not a regression from CHG-003.",
+      "fix": "Verify the email is provider-verified and bind the login to the stored (oauth_provider, oauth_sub) pair, requiring an explicit account-linking step for a new provider."
+    },
+    {
+      "id": "SEC-DEPLOY-01",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "configuration",
       "file": "nginx/nginx.conf",
-      "line": 58,
-      "message": "Deployment docs are incomplete for the prod topology the change creates. nginx location /api/ proxies /api/admin/* to the app with no allow/deny restriction, and docker-compose.prod.yml:71 runs uvicorn without --forwarded-allow-ips, so request.client.host is always the nginx container address. The documented consequence is a hard 403 lockout in prod; the docs never warn that the obvious operator workaround - adding the nginx container IP to ALLOWED_IPS - silently converts the allowlist into allow-any-internet-client, because every admin request then arrives from that one trusted address. The risk is misconfiguration, not a reachable exploit in the current tree, so WARN rather than BLOCK.",
-      "fix": "Document (and preferably add) an nginx-level control: a dedicated location /api/admin/ block with allow <office-ip>; deny all; before proxy_pass, so the perimeter enforces the same policy independently of the app. Add an explicit NEVER line to .env.example: never list the reverse-proxy address in ALLOWED_IPS."
+      "line": 70,
+      "description": "Pre-existing deployment mismatch: nginx only sets proxy_http_version 1.1 and the Upgrade/Connection headers under location /ws/, but the route is /api/notifications/ws/{user_id}, which matches location /api/ and is proxied without the upgrade headers. Behind the shipped proxy the WebSocket cannot complete its handshake, so the new R18 auth check has never run in a proxied deployment. Not a vulnerability, but it means the control is unverified end-to-end.",
+      "fix": "Add the upgrade headers to a location that matches the real path (for example location /api/notifications/ws/) or move the endpoint under /ws/."
     },
     {
-      "id": "VULN-003",
-      "severity": "low",
+      "id": "SEC-DEP-01",
+      "severity": "INFO",
       "level": "INFO",
-      "category": "documentation-accuracy",
-      "file": ".env.example",
-      "line": 79,
-      "message": "The client-IP caveat is only approximately right for this repo's compose files. docker-compose.yml uses a project-scoped bridge network, so the observed gateway is normally 172.18.x.1 and not the default-bridge 172.17.0.1 given as the example. Under rootless Docker / some port drivers the published port at docker-compose.yml:73 can present the source as 127.0.0.1, which simultaneously matches the default ALLOWED_IPS=127.0.0.1 and the default FORWARDED_ALLOW_IPS trust set, making X-Forwarded-For trusted for any LAN client reaching host:8000.",
-      "fix": "Say the gateway address is environment-specific and must be read from `docker network inspect`, and note the rootless-Docker case where the source appears as 127.0.0.1."
+      "category": "dependency",
+      "file": "requirements.txt",
+      "line": 18,
+      "description": "Not in the change set (no manifest was modified, so no audit was run), but noted because the new tokens depend on it: python-jose 3.3.0 carries CVE-2024-33663 (algorithm confusion) and CVE-2024-33664 (JWE decompression DoS). Neither applies to this code path - tokens are HS256 with a symmetric secret and decode pins algorithms=[settings.jwt_algorithm], and no JWE is consumed.",
+      "fix": "Track an upgrade to a patched JWT library (python-jose >= 3.4 or PyJWT) in dependency maintenance."
     },
     {
-      "id": "VULN-004",
-      "severity": "low",
+      "id": "SEC-POLICY-01",
+      "severity": "INFO",
       "level": "INFO",
-      "category": "documentation-accuracy",
-      "file": ".env.example",
-      "line": 74,
-      "message": "The comment claims the allowlist is 'checked before admin login/role checks', but no admin login endpoint exists: admin_sub is only read (app/dependencies.py:42) and never issued anywhere in app/. The ordering claim holds for role checks (router-level dependencies are solved before route-level ones), but the allowlist covers only /api/admin/*, so an admin login added later under /api/auth/* would be outside the protected prefix.",
-      "fix": "Reword to 'enforced on every /api/admin/* route, before the role check', and add a note to the story that a future admin login endpoint must either live under /api/admin/ or carry require_server_ip explicitly."
-    },
-    {
-      "id": "VULN-005",
-      "severity": "low",
-      "level": "INFO",
-      "category": "information-disclosure",
-      "file": "app/routers/admin/users.py",
-      "line": 17,
-      "message": "Routes declared with path '/' (users, portals, config) are reached as /api/admin/users etc. via Starlette's redirect_slashes, which issues a 307 during routing - before any dependency runs. A blocked IP therefore sees a 307 rather than a 403 on the unslashed form and can enumerate which admin route prefixes exist. Following the redirect yields 403, so no data is exposed.",
-      "fix": "Optional: declare the collection routes with explicit paths or set redirect_slashes=False on the app if route-existence disclosure matters."
-    },
-    {
-      "id": "VULN-006",
-      "severity": "low",
-      "level": "INFO",
-      "category": "input-validation",
-      "file": "app/config.py",
-      "line": 90,
-      "message": "allowed_ip_list performs no format validation on entries - any string (hostname, typo, CIDR block, IPv6 literal) is accepted and compared by exact string equality. All failure modes are fail-closed, but an operator writing a CIDR range, a hostname, or connecting over IPv6 (::1 or ::ffff:127.0.0.1) gets a silent 403 with no diagnostic. The tests confirm this by allowlisting the literal string 'testclient'.",
-      "fix": "Optionally parse entries with ipaddress.ip_network and log a startup warning for unparseable entries; consider CIDR support so operators are not tempted to widen the list another way."
-    },
-    {
-      "id": "VULN-007",
-      "severity": "low",
-      "level": "INFO",
-      "category": "logging-monitoring",
-      "file": "app/security/ip_allowlist.py",
-      "line": 24,
-      "message": "A rejected admin request raises 403 without emitting an audit event, so probing of /api/admin/* from non-allowlisted addresses leaves no record in app/security/audit_log.py alongside the other admin.* events this diff preserves.",
-      "fix": "Emit an audit or structlog warning (event name plus the observed client host) on rejection; keep it rate-limited so it cannot be used to flood logs."
+      "category": "authentication",
+      "file": "app/routers/auth.py",
+      "line": 105,
+      "description": "Explicitly out of scope and not blocking, recorded for the product decision: TOTP is enrolment-only. Once totp_verified is True, the OAuth callback issues an 8-hour session with no second factor, so the system provides 2FA at registration rather than at each login. CHG-003 states this policy is unchanged and pending a product decision.",
+      "fix": "Product decision: if step-up at each login is wanted, route verified users through the same pending_2fa flow and require a code before issuing access_token."
     }
   ],
-  "verified_no_finding": [
-    "Coverage: all six /api/admin routers (config, crawls, ops, portals, taxonomy, users) carry dependencies=[Depends(require_server_ip)]; app/main.py registers no other /api/admin router and no admin endpoint exists under another prefix. tests/unit/test_ip_allowlist.py::test_every_admin_route_depends_on_require_server_ip enumerates app.routes dynamically, so a future unguarded admin router fails CI.",
-    "Fail-closed logic: 'not client_ip or client_ip not in allowed' denies empty string, None (uvicorn sets scope['client'] = (None, 0) when every X-Forwarded-For entry is trusted) and any unlisted value; allowed_ip_list drops blank entries so ALLOWED_IPS='' yields [] and denies all. A literal '*' in ALLOWED_IPS matches no IP, so there is no accidental allow-any value.",
-    "Header spoofing through the shipped topology: nginx sets X-Forwarded-For $proxy_add_x_forwarded_for (real client appended last) and uvicorn 0.29 returns the rightmost untrusted entry for a non-wildcard trust list; with the default FORWARDED_ALLOW_IPS=127.0.0.1 and no proxy trust configured, forwarded headers are ignored entirely in both compose files. Refuted as an exploitable path today - retained only as the misconfiguration WARN VULN-001.",
-    "Ordering: FastAPI prepends router-level dependencies, so require_server_ip runs before require_role/get_current_admin; the 403-without-session test confirms it.",
-    "No new injection surface: admin routers use bound parameters (taxonomy UPDATE uses :s/:cat/:id), ORM selects elsewhere; no secret is added to source or logs by this diff; app/routers/admin/config.py returns only non-secret settings.",
-    "docker-compose.prod.yml does not publish the app port, so the only route to /api/admin in prod is through nginx."
+  "verified_controls": [
+    "Pending token forgery: create/decode use HS256 with settings.app_secret_key (required env var, no default or hardcoded fallback) and decode pins algorithms=[jwt_algorithm], so alg=none/confusion is not possible; python-jose verifies exp by default and ExpiredSignatureError maps to 401.",
+    "Cross-purpose replay is blocked in both directions: session_user_id rejects any token carrying a purpose claim (used by get_current_user and the WebSocket), and decode_pending_2fa_token requires purpose == 'totp_setup', so a plain access_token is rejected at /totp/verify.",
+    "No remaining unauthenticated session issuance: create_access_token has exactly two call sites, both gated - after authorize_access_token in the OAuth callback, and after decode_pending_2fa_token plus verify_totp in /totp/verify. The callback's totp_setup branch sets no access_token cookie.",
+    "Cookie attributes: pending_2fa is HttpOnly, Secure, SameSite=Lax, Max-Age=600, scoped to /api/auth/totp; delete_cookie uses the same key/path/attrs and Starlette 0.37.2 accepts those kwargs, so the clear matches the set and the cookie is not sent to any other route.",
+    "CSRF on POST /api/auth/totp/verify: SameSite=Lax withholds pending_2fa on cross-site POSTs, so a forged submission gets 401; CORS is restricted to settings.frontend_url so the response is unreadable cross-origin. A successful forgery would also require a valid TOTP code.",
+    "Admin token confusion: pending_2fa tokens carry no admin_sub, user session tokens carry no admin_sub, and nothing in app/ issues admin tokens, so neither token type satisfies get_current_admin.",
+    "WebSocket close-before-accept: Starlette permits websocket.close in the CONNECTING state, so the handshake is denied before accept() and the socket is never added to _connections; the identity check is an exact string comparison of the token sub against the path user_id, and a missing/invalid/purpose-bound token yields None which never equals a path segment.",
+    "WebSocket cleanup: _unregister is membership-guarded and pops empty entries, and the finally block cannot raise KeyError/ValueError; push_to_user iterates a copy and logs failures instead of swallowing them."
   ]
 }

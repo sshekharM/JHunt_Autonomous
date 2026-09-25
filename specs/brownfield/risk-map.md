@@ -202,6 +202,45 @@ The `__module__ and` is a no-op truthiness guard that obscures a plain tuple
 assignment, on the code path that establishes a user's permanent identity. It
 also calls `generate_thumbprint` twice. Rewrite plainly.
 
+### R17 — TOTP verify was an OAuth bypass (fixed, CHG-003)
+`POST /api/auth/totp/verify` took `user_id` and `code` as query parameters and
+needed no prior authentication. On a valid code it marked the account
+2FA-verified and issued an eight-hour `access_token`. That turned a user id plus
+a TOTP code into a full session without the OAuth login. SEC-009 in
+`specs/reviews/security-review.md` describes it.
+
+Fixed: the OAuth callback's `totp_setup` branch now sets a signed `pending_2fa`
+cookie. It is a JWT with `purpose=totp_setup`, lives 10 minutes, and is
+`HttpOnly`, `Secure`, `SameSite=Lax`, scoped to `/api/auth/totp`. The verify
+endpoint takes only `code`, gets the user from that cookie, and returns 401 when
+the cookie is missing, expired, or has the wrong purpose. It clears the cookie
+on success. `get_current_user` now refuses any JWT that has a `purpose` claim,
+so a pending token cannot be used as a session.
+
+**Still open (product decision):** a user who has verified TOTP once is never
+asked for a code at later logins. OAuth alone gets them a session. Whether to
+require TOTP at every login has not been decided.
+
+### R18 — Notifications WebSocket had no authentication (fixed, CHG-004)
+`/api/notifications/ws/{user_id}` (`app/routers/notifications.py`) accepted
+any connection for any `user_id` and registered it. `push_to_user` then sent
+that user's real-time notifications to whoever connected. The disconnect
+handler indexed `_connections[user_id]` directly and raised `KeyError` or
+`ValueError` when the entry was already gone.
+
+Fixed: before `accept()`, the handler reads the `access_token` cookie and
+decodes it with `session_user_id`, which wraps `decode_access_token` and
+rejects purpose-bound tokens. It closes with 1008 without accepting or
+registering when the cookie is missing, invalid, or for a different user.
+Cleanup runs in `finally` and does nothing when the entry is missing. It also
+drops a user's empty entry, so the registry no longer grows forever.
+`push_to_user` now logs a failed send (`notifications.ws_push_failed`)
+instead of dropping it silently.
+
+**Still open (deployment):** `nginx/nginx.conf` sets the WebSocket upgrade
+headers only under `location /ws/`, but this route lives under `/api/`. The
+handshake probably cannot complete behind the shipped proxy.
+
 ---
 
 ## Structural risks
