@@ -135,10 +135,10 @@ async def _run_match_all_users() -> dict:
 
     for user_id, schema_name in users:
         try:
-            result = await _run_match_for_user(user_id, schema_name)
-            total_matched += result.get("matched", 0)
-            logger.info("match_jobs.user_done", **result)
-        except Exception as exc:
+            user_result = await _run_match_for_user(user_id, schema_name)
+            total_matched += user_result.get("matched", 0)
+            logger.info("match_jobs.user_done", **user_result)
+        except Exception as exc:  # noqa: BLE001 - one user's failure must not stop the rest
             logger.error("match_jobs.user_failed", user_id=user_id, error=str(exc))
             audit("match.user_failed", user_id=user_id, error=exc)
             failed += 1
