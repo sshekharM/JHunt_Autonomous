@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SEED_USER = (
     "INSERT INTO users (id, email_hash, email_encrypted, thumbprint, schema_name,"
     " oauth_provider, oauth_sub, totp_secret_encrypted)"
-    " VALUES ('u-db', 'u-db', '\\x00', 'u-db', 'u_db', 'google', 'u-db', '\\x00')"
+    # empty secret = an anonymised account; 0004's downgrade must decrypt real rows
+    " VALUES ('u-db', 'u-db', '\\x00', 'u-db', 'u_db', 'google', 'u-db', '')"
 )
 SEED_GRANT = (
     "INSERT INTO consent_records (id, user_id, consent_version, ip_address, user_agent,"
