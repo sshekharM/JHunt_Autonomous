@@ -130,10 +130,10 @@ async def _retrain_all() -> dict:
 
     for user_id, schema_name in users:
         try:
-            result = await _retrain_for_user(user_id, schema_name)
-            if result.get("status") == "ok":
+            user_result = await _retrain_for_user(user_id, schema_name)
+            if user_result.get("status") == "ok":
                 updated += 1
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one user's failure must not stop the rest
             logger.error("ml_retrain.user_failed", user_id=user_id, error=str(exc))
             failed += 1
 
@@ -197,7 +197,7 @@ async def _purge_tenant_resumes(schema_name: str, cutoff: datetime) -> tuple[int
         for resume in stale.scalars():
             try:
                 await storage_service.delete_object(resume.minio_key)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one object failing to delete must not stop the purge
                 logger.error("purge_stale_resumes.object_failed", schema=schema_name, error=str(exc))
                 errors += 1
                 continue
@@ -217,7 +217,7 @@ async def _purge_stale_resumes_async() -> dict:
         totals["tenants"] += 1
         try:
             purged, errors = await _purge_tenant_resumes(schema_name, cutoff)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one tenant failing must not stop the rest
             logger.error("purge_stale_resumes.tenant_failed", schema=schema_name, error=str(exc))
             totals["errors"] += 1
             continue
