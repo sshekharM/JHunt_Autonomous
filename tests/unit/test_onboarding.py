@@ -16,8 +16,8 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
 
-from app.security import encryption
 from app.routers import onboarding
+from app.security import encryption
 from app.security.encryption import generate_thumbprint, schema_name_from_thumbprint
 from app.tenant_models.profile import LLMChoice, NotificationPlatform
 
@@ -65,10 +65,6 @@ def wired(monkeypatch):
     async def provision(schema):
         calls.provisioned.append(schema)
 
-    async def tenant_db(schema):
-        calls.tenant_schemas.append(schema)
-        yield calls.tenant
-
     @contextlib.asynccontextmanager
     async def tenant_session(schema):
         calls.tenant_schemas.append(schema)
@@ -76,9 +72,7 @@ def wired(monkeypatch):
 
     monkeypatch.setattr(encryption, "decrypt", lambda _: EMAIL)
     monkeypatch.setattr(onboarding, "provision_user_schema", provision)
-    # Fake both session openers; raising=False lets either be absent from onboarding.
-    monkeypatch.setattr(onboarding, "get_tenant_db", tenant_db, raising=False)
-    monkeypatch.setattr(onboarding, "tenant_session", tenant_session, raising=False)
+    monkeypatch.setattr(onboarding, "tenant_session", tenant_session)
     monkeypatch.setattr(onboarding, "audit", lambda *a, **k: None)
     return calls
 
