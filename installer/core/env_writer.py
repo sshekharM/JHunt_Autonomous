@@ -1,7 +1,8 @@
 """Generate and write .env file from wizard configuration."""
+import contextlib
 import os
 import secrets
-import string
+import stat
 
 
 def _fernet_key() -> str:
@@ -25,7 +26,7 @@ def _db_url(config: dict) -> str:
     pwd = config.get("db_password", "")
     if mode == "bundled":
         host = "db"
-    return f"postgresql://{user}:{pwd}@{host}:{port}/{name}"
+    return f"postgresql://{user}:{pwd}@{host}:{port}/{name}"  # harness:secret-ok — template from wizard input, no literal credential
 
 
 def write_env(config: dict, install_dir: str) -> str:
@@ -54,8 +55,8 @@ def write_env(config: dict, install_dir: str) -> str:
         "# ── Application ─────────────────────────────────────────────────────────────",
         "APP_ENV=production",
         f"APP_SECRET_KEY={secret_key}",
-        f"APP_BASE_URL=http://localhost:8000",
-        f"FRONTEND_URL=http://localhost:5173",
+        "APP_BASE_URL=http://localhost:8000",
+        "FRONTEND_URL=http://localhost:5173",
         "",
         "# ── Database ─────────────────────────────────────────────────────────────────",
         f"POSTGRES_HOST={config.get('db_host', 'db')}",
@@ -92,7 +93,7 @@ def write_env(config: dict, install_dir: str) -> str:
         "",
         "# ── LLM ──────────────────────────────────────────────────────────────────────",
         f"ANTHROPIC_API_KEY={anthropic_key}",
-        f"OLLAMA_BASE_URL=http://ollama:11434",
+        "OLLAMA_BASE_URL=http://ollama:11434",
         f"OLLAMA_MODEL={ollama_model}",
         f"LLM_PROVIDER={llm_choice}",
         "",
@@ -112,7 +113,7 @@ def write_env(config: dict, install_dir: str) -> str:
         "# ── Security ─────────────────────────────────────────────────────────────────",
         "ALLOWED_IPS=127.0.0.1",
         "JWT_ALGORITHM=HS256",
-        "JWT_EXPIRY_HOURS=8",
+        "JWT_EXPIRY_HOURS=4",
         "TOTP_ISSUER=jH_ANS",
         "",
         "# ── Crawling ─────────────────────────────────────────────────────────────────",
@@ -145,11 +146,8 @@ def write_env(config: dict, install_dir: str) -> str:
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(env_content)
 
-    # Restrict permissions on non-Windows
-    try:
-        import stat
+    # Owner read/write only. Best effort: Windows ignores POSIX mode bits.
+    with contextlib.suppress(OSError):
         os.chmod(env_path, stat.S_IRUSR | stat.S_IWUSR)
-    except Exception:
-        pass
 
     return env_path

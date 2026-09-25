@@ -423,3 +423,23 @@ def test_logout_clears_the_session_cookie(api):
     [cleared] = _cookies(response, "access_token")
     assert "max-age=0" in cleared.lower()
     assert api.events == ["auth.logout"]
+
+
+def _max_age(set_cookie):
+    [attr] = [a for a in set_cookie.lower().split(";") if a.strip().startswith("max-age=")]
+    return int(attr.split("=", 1)[1])
+
+
+def test_session_cookies_live_exactly_as_long_as_the_token(api, monkeypatch):
+    """Given a configured session length, when a session opens by login or by TOTP
+    verify, then the access_token cookie and the JWT expire together."""
+    monkeypatch.setattr(auth.settings, "jwt_expiry_hours", 3)
+    api.db.user = _user(verified=True)
+    [login] = _cookies(_callback(api), "access_token")
+    api.db.user = _user()
+    [verified] = _cookies(_verify(api, token=create_pending_2fa_token(USER_ID)), "access_token")
+
+    for cookie in (login, verified):
+        assert _max_age(cookie) == 3 * 3600
+        claims = decode_access_token(_cookie_value(cookie))
+        assert claims["exp"] - claims["iat"] == 3 * 3600

@@ -9,14 +9,15 @@ and advance user.onboarding_step; these characterization tests pin the exact
 response body and branch behavior of every handler in app/routers/onboarding.py.
 """
 import asyncio
+import contextlib
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
 
-import app.security.encryption as encryption
 from app.routers import onboarding
+from app.security import encryption
 from app.security.encryption import generate_thumbprint, schema_name_from_thumbprint
 from app.tenant_models.profile import LLMChoice, NotificationPlatform
 
@@ -64,13 +65,14 @@ def wired(monkeypatch):
     async def provision(schema):
         calls.provisioned.append(schema)
 
-    async def tenant_db(schema):
+    @contextlib.asynccontextmanager
+    async def tenant_session(schema):
         calls.tenant_schemas.append(schema)
         yield calls.tenant
 
     monkeypatch.setattr(encryption, "decrypt", lambda _: EMAIL)
     monkeypatch.setattr(onboarding, "provision_user_schema", provision)
-    monkeypatch.setattr(onboarding, "get_tenant_db", tenant_db)
+    monkeypatch.setattr(onboarding, "tenant_session", tenant_session)
     monkeypatch.setattr(onboarding, "audit", lambda *a, **k: None)
     return calls
 

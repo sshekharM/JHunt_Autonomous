@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from app.database import get_db, get_tenant_db, provision_user_schema
+from app.database import get_db, provision_user_schema, tenant_session
 from app.models.user import User
 from app.tenant_models.profile import UserProfile, UserPreferences, WFHPreference, LLMChoice, NotificationPlatform
 from app.tenant_models.skill import UserSkill
@@ -109,7 +109,7 @@ async def step1_personal(
     await provision_user_schema(schema_name)
 
     # Create profile in tenant schema
-    async for tenant_db in get_tenant_db(schema_name):
+    async with tenant_session(schema_name) as tenant_db:
         profile = UserProfile(
             full_name_encrypted=encrypt(data.full_name),
             phone_encrypted=encrypt(data.phone),
@@ -143,7 +143,7 @@ async def step2_professional(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         result = await tenant_db.execute(text("SELECT id FROM profile LIMIT 1"))
         row = result.first()
         if row:
@@ -165,7 +165,7 @@ async def step3_experience(
     db: AsyncSession = Depends(get_db),
 ):
     import json
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         await tenant_db.execute(
             text("UPDATE profile SET work_history=:wh, education=:edu"),
             {
@@ -186,7 +186,7 @@ async def step4_preferences(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         prefs = UserPreferences(
             desired_roles=data.desired_roles,
             preferred_locations=data.preferred_locations,
@@ -214,7 +214,7 @@ async def step5_skills(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         for s in data.skills:
             skill = UserSkill(
                 skill_name=s["skill_name"],
@@ -239,7 +239,7 @@ async def step5_resume_upload(
         raise HTTPException(status_code=400, detail="Only PDF resumes are accepted.")
     contents = await file.read()
     minio_key = await upload_resume(user.schema_name, contents, file.filename)
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         resume = MasterResume(minio_key=minio_key, original_filename=file.filename or "resume.pdf")
         tenant_db.add(resume)
         await tenant_db.commit()
@@ -255,7 +255,7 @@ async def step6_llm_choice(
 ):
     if not data.data_processing_acknowledged:
         raise HTTPException(status_code=400, detail="You must acknowledge the data processing notice.")
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         await tenant_db.execute(
             text("UPDATE preferences SET llm_choice=:choice"),
             {"choice": data.llm_choice.value},
@@ -273,7 +273,7 @@ async def step7_notifications(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         await tenant_db.execute(
             text(
                 "UPDATE preferences SET notification_platform=:p, "
@@ -305,7 +305,7 @@ async def step9_consent(
     if not data.consented_to_data_processing:
         raise HTTPException(status_code=400, detail="Consent to data processing is required.")
 
-    async for tenant_db in get_tenant_db(user.schema_name):
+    async with tenant_session(user.schema_name) as tenant_db:
         prefs_result = await tenant_db.execute(text("SELECT llm_choice FROM preferences LIMIT 1"))
         row = prefs_result.first()
         llm_choice = row[0] if row else "self_hosted"

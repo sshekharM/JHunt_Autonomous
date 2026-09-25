@@ -27,3 +27,9 @@ def test_unrecognised_app_env_is_rejected(monkeypatch, value):
     monkeypatch.setenv("APP_ENV", value)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_session_lifetime_defaults_to_four_hours(monkeypatch):
+    """Authenticated sessions last 4h by default (product decision 2026-09-25)."""
+    monkeypatch.delenv("JWT_EXPIRY_HOURS", raising=False)
+    assert Settings(_env_file=None).jwt_expiry_hours == 4
