@@ -76,7 +76,8 @@ def wired(monkeypatch):
 
     monkeypatch.setattr(encryption, "decrypt", lambda _: EMAIL)
     monkeypatch.setattr(onboarding, "provision_user_schema", provision)
-    monkeypatch.setattr(onboarding, "get_tenant_db", tenant_db)
+    # Fake both session openers; raising=False lets either be absent from onboarding.
+    monkeypatch.setattr(onboarding, "get_tenant_db", tenant_db, raising=False)
     monkeypatch.setattr(onboarding, "tenant_session", tenant_session, raising=False)
     monkeypatch.setattr(onboarding, "audit", lambda *a, **k: None)
     return calls
