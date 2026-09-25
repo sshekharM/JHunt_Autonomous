@@ -1,125 +1,73 @@
 {
   "gate": "code-review",
-  "reviewer": "instance-B",
-  "story": "CHG-002-admin-ip-allowlist",
-  "range": "working-tree (uncommitted) on fix/admin-ip-allowlist",
+  "reviewer": "instance-b",
   "verdict": "PASS",
   "pass": true,
-  "summary": { "block": 0, "warn": 2, "info": 7 },
-  "verification_run": [
-    ".venv/Scripts/python.exe -m pytest -q tests/unit/test_ip_allowlist.py -> 12 passed",
-    "in-process probe: all 11 /api/admin APIRoutes have require_server_ip as dependant.dependencies[0]; GET/POST probes from a disallowed host return 403 before auth and before path/param handling"
-  ],
-  "ac_assessment": {
-    "AC1": "met - router-level dependency on all 6 admin routers; probe confirms 11/11 admin routes, none unguarded",
-    "AC2": "met - 403 (not 401) for an unauthenticated caller from an unlisted IP; IP check resolves first in the dependant tree",
-    "AC3": "met - listed IP falls through to get_current_admin (401)",
-    "AC4": "met - whitespace stripped, blank entries dropped",
-    "AC5": "met - empty/all-blank list denies all; missing client address denied; documented in docstring and .env.example"
-  },
+  "range": "53a8844..HEAD",
+  "summary": { "block": 0, "warn": 2, "info": 3 },
   "findings": [
     {
       "id": "CRB-001",
-      "level": "WARN",
       "severity": "WARN",
-      "confidence": "high",
+      "confidence": "medium",
       "axis": "behaviour",
-      "file": "docker-compose.prod.yml",
-      "line": 71,
-      "message": "Prod uvicorn runs behind nginx with no --forwarded-allow-ips, so request.client.host is the nginx container's bridge IP, which is dynamic. After this change every /api/admin route returns 403 in the documented prod topology and there is no static value an operator can put in ALLOWED_IPS to fix it (the exact-match list cannot track a rotating container IP). Fail-closed is the right direction and the story scopes proxy handling out, so this is not a block, but it ships an unreachable admin surface.",
-      "fix": "Open a follow-up story to set FORWARDED_ALLOW_IPS/--forwarded-allow-ips to the nginx service address and resolve the client IP from X-Forwarded-For, or give nginx a fixed address on the compose network; until then add the lockout to the deploy runbook."
+      "file": "app/dependencies.py",
+      "line": 38,
+      "description": "The purpose-claim hardening is applied to only one of the two session entry points in the file the diff touched. get_current_user now goes through session_user_id (rejects any JWT carrying a `purpose` claim), but get_current_admin still calls decode_access_token directly and accepts any token that has an `admin_sub` claim, with no purpose check. No exploit exists today (nothing in app/ mints a token containing `admin_sub`, and pending_2fa tokens carry `sub`, not `admin_sub`), so this is not a reachable bypass, but the invariant 'a purpose-bound token is never a session' is only half enforced and will silently regress the moment an admin purpose-bound token (e.g. admin pending-2FA) is introduced.",
+      "fix": "In get_current_admin, reject purpose-bound tokens too: after `payload = decode_access_token(access_token)`, add `if \"purpose\" in payload: raise HTTPException(401, ...)` (or extract a shared `_session_claims(token)` helper in auth_service used by both dependencies)."
     },
     {
       "id": "CRB-002",
-      "level": "WARN",
       "severity": "WARN",
       "confidence": "high",
-      "axis": "behaviour",
-      "file": "app/security/ip_allowlist.py",
-      "line": 24,
-      "message": "A denied admin request raises 403 without an audit entry, although app/security/audit_log.py exists and every admin mutation in the touched routers already calls audit(). Blocked admin access attempts from unlisted IPs leave no trace, which is the signal an IP allowlist is most useful for.",
-      "fix": "Call the existing audit helper (or a logger.warning with the rejected IP and path) on the deny branch before raising."
+      "axis": "maintainability",
+      "file": "app/routers/notifications.py",
+      "line": 12,
+      "description": "The diff rewrote this import line to add session_user_id but left decode_access_token imported; after the change it has no use anywhere in the module (the only decode path is session_user_id at line 27). ruff F401 would flag it, and the context pack records that ruff/mypy were not runnable in this venv, so the lint gate did not catch it.",
+      "fix": "Change line 12 to `from app.services.auth_service import session_user_id`. (`json` at line 2 and `get_db` at line 9 are also unused but were already unused before this change - leave them or clean separately.)"
     },
     {
       "id": "CRB-003",
-      "level": "INFO",
       "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/routers/admin/config.py",
-      "line": 9,
-      "message": "dependencies=[Depends(require_server_ip)] is duplicated across all six admin routers; a future admin router that forgets the line is a silent security gap. The AC1 route-scan test mitigates this, so it is an observation, not a defect.",
-      "fix": "Optional: mount the six routers under one parent APIRouter(prefix=\"/api/admin\", dependencies=[Depends(require_server_ip)]) in app/main.py so the control is declared once."
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "app/routers/notifications.py",
+      "line": 44,
+      "description": "CHG-004 AC2 and the risk-map entry say the socket is 'closed with code 1008'. Closing before accept() is the correct and secure choice, but per the ASGI spec a `websocket.close` sent in the CONNECTING state makes the server (uvicorn) reject the handshake with an HTTP 403 response; the 1008 close code is never put on the wire. The assertion in tests/unit/test_notifications.py:87-94 holds only because Starlette's TestClient surfaces the ASGI close message as WebSocketDisconnect(1008). Denial behaviour is correct either way; only the client-visible signal differs from the wording of the AC.",
+      "fix": "No code change needed. Note in CHG-004/risk-map R18 that real clients see an HTTP 403 handshake rejection (the 1008 code is the ASGI-level signal), so a future frontend does not wait for a close frame that never arrives."
     },
     {
       "id": "CRB-004",
-      "level": "INFO",
       "severity": "INFO",
-      "confidence": "high",
+      "confidence": "medium",
       "axis": "behaviour",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 59,
-      "message": "The AC3 test asserts only status_code == 401 and would still pass if require_server_ip were deleted entirely (the route 401s either way), so it is not by itself a regression detector for the pass-through path. AC1/AC2 tests do cover the regression.",
-      "fix": "Add assert response.json()[\"detail\"] == \"Not authenticated.\" so the test pins that the 401 comes from admin authentication rather than any other guard."
+      "file": "app/routers/auth.py",
+      "line": 169,
+      "description": "The pending_2fa token is not single-use. delete_cookie clears the browser's copy, but the JWT itself stays valid for the remainder of its 10 minutes, and verify_totp_code does not check user.totp_verified. A captured pending token plus a valid TOTP code could therefore mint a second 8-hour session after enrolment completed. Exposure is small (HttpOnly/Secure/SameSite=Lax cookie, <=10 min, still needs a live TOTP code) and AC4 only requires clearing the cookie, so this is a follow-up, not a defect against the story.",
+      "fix": "Cheapest hardening: after the user lookup, `if user.totp_verified: raise HTTPException(400, 'TOTP already verified.')` - a replayed pending token then cannot re-open a session. A jti denylist would be the fuller fix."
     },
     {
       "id": "CRB-005",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 31,
-      "message": "The module-local `client` fixture shadows the DB-backed async `client` fixture in tests/conftest.py with a different type (sync TestClient). Correct and deliberate here (it keeps the tests hermetic), but a later test added to this file would silently get the local one.",
-      "fix": "Rename to `api_client` or add a one-line comment stating the shadowing is intentional."
-    },
-    {
-      "id": "CRB-006",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 65,
-      "message": "test_listed_ip_passes_the_check carries no # ACn tag while every other test in the file does; it belongs to AC3.",
-      "fix": "Add the # AC3 tag for consistency."
-    },
-    {
-      "id": "CRB-007",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": ".env.example",
-      "line": 73,
-      "message": "Exact string matching means an IPv6-connected client reports ::1 or ::ffff:127.0.0.1 and never matches the default ALLOWED_IPS=127.0.0.1. This fails closed (safe) but is the same class of operator surprise as the Docker/nginx caveat already documented.",
-      "fix": "Add one line to the ALLOWED_IPS comment: list the IPv6 form too when the server binds ::."
-    },
-    {
-      "id": "CRB-008",
-      "level": "INFO",
       "severity": "INFO",
       "confidence": "high",
       "axis": "behaviour",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 44,
-      "message": "The AC1 route scan matches on path.startswith(\"/api/admin\"), so a future admin router mounted under a different prefix would not be caught. Consistent with the story's wording, noted only so the limit is explicit.",
-      "fix": "None required."
-    },
-    {
-      "id": "CRB-009",
-      "level": "INFO",
-      "severity": "INFO",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "specs/brownfield/risk-map.md",
-      "line": 69,
-      "message": "R5 still reads 'Neither is imported anywhere', which this diff makes false.",
-      "fix": "Close or annotate R5 with the CHG-002 reference when the change merges."
+      "file": "tests/unit/test_auth.py",
+      "line": 237,
+      "description": "AC2 has two halves: a user_id query parameter is ignored, and the user comes from the cookie. Only the no-cookie half is tested (test_verify_without_pending_cookie_is_401_even_with_a_user_id). No test sends a valid pending token for user A together with `?user_id=B` and asserts the lookup still uses A. The suite is otherwise strong (69 passed; the reject-parametrisations assert db.queries == 0 / commits == 0, and the WS tests assert not-accepted and an empty registry, so they genuinely bite).",
+      "fix": "Add one case to test_verify_with_pending_token_and_good_code_opens_a_session using `params={\"user_id\": \"someone-else\"}` and keep the existing `users.id = 'user-123'` SQL assertion."
     }
   ],
-  "acceptance_test_readability": {
-    "rating": "good",
-    "notes": "The module docstring states the requirement in Given/When/Then plain English, test names are sentences a stakeholder can read (from_unlisted_ip_is_forbidden_before_auth, empty_allowlist_denies_every_request), and each test carries its AC tag. Two small readability nits: allowlisting the literal string 'testclient' as an 'IP' (line 60) reads oddly to a non-technical reader even with the named constant, and the AC1 assertion `assert unguarded == []` has no human-readable message explaining what an unguarded route means."
-  }
+  "verification": {
+    "tests_run": "node .claude/scripts/run-compact.js --kind test -- .venv/Scripts/python.exe -m pytest -q tests/unit/test_auth.py tests/unit/test_auth_service.py tests/unit/test_dependencies.py tests/unit/test_notifications.py",
+    "result": "69 passed, 0 failed"
+  },
+  "checked_and_clear": [
+    "Cookie path /api/auth/totp matches request path /api/auth/totp/verify under RFC 6265 5.1.4 prefix rule; delete_cookie repeats the same path/attrs",
+    "Max-Age=600 == int(PENDING_2FA_TTL.total_seconds()); HttpOnly/Secure/SameSite=Lax present; no access_token cookie on the totp_setup branch",
+    "No in-repo caller of POST /api/auth/totp/verify or of /api/notifications/ws (installer/ does not call the API), so dropping the user_id parameter breaks no caller",
+    "totp_verified is written in exactly one place (auth.py:159), now cookie-bound; only one @router.websocket exists",
+    "Starlette 0.37 (fastapi 0.111) delete_cookie accepts secure/httponly/samesite; structlog 24.2.0 is in requirements and the logger name follows the project's '<pkg>.<module>' convention",
+    "_unregister is exception-safe in finally, removes only this socket by identity, and drops empty entries; no await between registry mutations so no interleaving race",
+    "SameSite=Lax + POST means the pending cookie is not sent on cross-site CSRF attempts against /totp/verify"
+  ]
 }

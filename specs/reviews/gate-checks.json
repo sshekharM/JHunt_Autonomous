@@ -1,47 +1,19 @@
 {
   "schema_version": 1,
   "summary": {
-    "pass": false,
-    "passed": 4,
-    "blocked": 1,
+    "pass": true,
+    "passed": 1,
+    "blocked": 0,
     "warn": 0,
     "skipped": 0
   },
   "results": [
     {
-      "id": "cycle-detection",
-      "pack": "brownfield",
-      "blocking": true,
-      "status": "passed",
-      "detail": ""
-    },
-    {
-      "id": "coupling-ratchet",
-      "pack": "brownfield",
-      "blocking": true,
-      "status": "passed",
-      "detail": ""
-    },
-    {
-      "id": "duplication-ratchet",
-      "pack": "brownfield",
-      "blocking": true,
-      "status": "passed",
-      "detail": ""
-    },
-    {
-      "id": "observability-gate",
+      "id": "local-regression",
       "pack": "verification",
       "blocking": true,
       "status": "passed",
       "detail": ""
-    },
-    {
-      "id": "perf-smell",
-      "pack": "verification",
-      "blocking": true,
-      "status": "blocked",
-      "detail": "Batch the query, or move the sync call off the async path. Unbounded-load findings are WARN only."
     }
   ]
 }
