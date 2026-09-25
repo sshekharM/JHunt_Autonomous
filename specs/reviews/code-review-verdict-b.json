@@ -1,73 +1,108 @@
 {
-  "gate": "code-review",
-  "reviewer": "instance-b",
   "verdict": "PASS",
-  "pass": true,
-  "range": "53a8844..HEAD",
-  "summary": { "block": 0, "warn": 2, "info": 3 },
+  "reviewer": "code-reviewer-b",
+  "range": "e483f81..HEAD",
+  "summary": { "block": 0, "warn": 4, "info": 6 },
   "findings": [
     {
       "id": "CRB-001",
       "severity": "WARN",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "app/dependencies.py",
-      "line": 38,
-      "description": "The purpose-claim hardening is applied to only one of the two session entry points in the file the diff touched. get_current_user now goes through session_user_id (rejects any JWT carrying a `purpose` claim), but get_current_admin still calls decode_access_token directly and accepts any token that has an `admin_sub` claim, with no purpose check. No exploit exists today (nothing in app/ mints a token containing `admin_sub`, and pending_2fa tokens carry `sub`, not `admin_sub`), so this is not a reachable bypass, but the invariant 'a purpose-bound token is never a session' is only half enforced and will silently regress the moment an admin purpose-bound token (e.g. admin pending-2FA) is introduced.",
-      "fix": "In get_current_admin, reject purpose-bound tokens too: after `payload = decode_access_token(access_token)`, add `if \"purpose\" in payload: raise HTTPException(401, ...)` (or extract a shared `_session_claims(token)` helper in auth_service used by both dependencies)."
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/security/totp.py",
+      "line": 30,
+      "description": "verify_totp is now dead production code. matched_totp_step replaced it at the only production call site (app/routers/auth.py); the sole remaining reference is tests/validation/test_full_validation.py:135. verify_totp is not step-aware, so it silently skips the CHG-006 replay guard: a future caller that reaches for the obvious-looking helper reintroduces the R17 replay hole the branch just closed.",
+      "fix": "Delete verify_totp and point tests/validation/test_full_validation.py at matched_totp_step, or keep it with an explicit docstring warning that it bypasses the replay guard and must not be used on the verify path."
     },
     {
       "id": "CRB-002",
       "severity": "WARN",
-      "confidence": "high",
+      "confidence": "medium",
       "axis": "maintainability",
-      "file": "app/routers/notifications.py",
-      "line": 12,
-      "description": "The diff rewrote this import line to add session_user_id but left decode_access_token imported; after the change it has no use anywhere in the module (the only decode path is session_user_id at line 27). ruff F401 would flag it, and the context pack records that ruff/mypy were not runnable in this venv, so the lint gate did not catch it.",
-      "fix": "Change line 12 to `from app.services.auth_service import session_user_id`. (`json` at line 2 and `get_db` at line 9 are also unused but were already unused before this change - leave them or clean separately.)"
+      "file": "app/routers/auth.py",
+      "line": 158,
+      "description": "_check_totp_code has an asymmetric commit contract that nothing states: the failure branch commits the counter itself (line 170), while the success branch (record_success at line 175, which sets totp_failed_attempts/totp_locked_until/totp_last_used_step) relies on the caller committing afterwards. A second caller that forgets the commit would drop the replay step and the counter reset with no test failing, since only verify_totp_code is exercised.",
+      "fix": "Say so in the docstring ('failures commit; the caller must commit on success so totp_verified and the step land in one transaction'), or return a flag and let verify_totp_code own both commits."
     },
     {
       "id": "CRB-003",
-      "severity": "INFO",
-      "confidence": "medium",
+      "severity": "WARN",
+      "confidence": "low",
       "axis": "behaviour",
-      "file": "app/routers/notifications.py",
-      "line": 44,
-      "description": "CHG-004 AC2 and the risk-map entry say the socket is 'closed with code 1008'. Closing before accept() is the correct and secure choice, but per the ASGI spec a `websocket.close` sent in the CONNECTING state makes the server (uvicorn) reject the handshake with an HTTP 403 response; the 1008 close code is never put on the wire. The assertion in tests/unit/test_notifications.py:87-94 holds only because Starlette's TestClient surfaces the ASGI close message as WebSocketDisconnect(1008). Denial behaviour is correct either way; only the client-visible signal differs from the wording of the AC.",
-      "fix": "No code change needed. Note in CHG-004/risk-map R18 that real clients see an HTTP 403 handshake rejection (the 1008 code is the ASGI-level signal), so a future frontend does not wait for a close frame that never arrives."
+      "file": "app/routers/auth.py",
+      "line": 168,
+      "description": "Unexercised failure path: app.security.encryption.decrypt raises InvalidToken on the b\"\" that app/compliance/deletion.py:86 writes for an anonymised user, so decrypt(user.totp_secret_encrypted) in _check_totp_code (line 168) and in _totp_setup_response (line 127) would surface as a 500 from main.py's global Exception handler rather than a 4xx. Migration 0004 deliberately handles the blank case (decrypt_secret returns \"\" for b\"\"); the application path does not. Today it is unreachable only by two incidental invariants: _anonymise rewrites email_hash so the callback lookup misses, and _pending_2fa_user rejects totp_verified users (anonymise requires a session, which requires verification). Neither invariant is pinned by a test.",
+      "fix": "Guard the verify path on a blank secret (treat b\"\" as 'no enrolment', 401/409, or check user.is_active in _pending_2fa_user) and add a test that an anonymised row cannot reach decrypt."
     },
     {
       "id": "CRB-004",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/auth.py",
-      "line": 169,
-      "description": "The pending_2fa token is not single-use. delete_cookie clears the browser's copy, but the JWT itself stays valid for the remainder of its 10 minutes, and verify_totp_code does not check user.totp_verified. A captured pending token plus a valid TOTP code could therefore mint a second 8-hour session after enrolment completed. Exposure is small (HttpOnly/Secure/SameSite=Lax cookie, <=10 min, still needs a live TOTP code) and AC4 only requires clearing the cookie, so this is a follow-up, not a defect against the story.",
-      "fix": "Cheapest hardening: after the user lookup, `if user.totp_verified: raise HTTPException(400, 'TOTP already verified.')` - a replayed pending token then cannot re-open a session. A jti denylist would be the fuller fix."
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 88,
+      "description": "The only executed proof of AC6/AC7 for a destructive column-drop migration is SQLite. On SQLite op.batch_alter_table recreates the table, so the unit test never exercises the PostgreSQL statements this migration actually emits (ALTER COLUMN ... SET NOT NULL, DROP COLUMN, bytea executemany with mixed b\"\"/ciphertext/NULL values). tests/integration/test_totp_secret_migration.py is written for exactly this but has never been run (context pack: 'Not run: PostgreSQL migration round trip'). Residual risk, not a defect I can reproduce.",
+      "fix": "Run tests/integration/test_totp_secret_migration.py with RUN_DB_TESTS=1 in the CI integration job (or against a throwaway Postgres container) and record the result before this reaches an environment holding real rows."
     },
     {
       "id": "CRB-005",
       "severity": "INFO",
       "confidence": "high",
-      "axis": "behaviour",
-      "file": "tests/unit/test_auth.py",
-      "line": 237,
-      "description": "AC2 has two halves: a user_id query parameter is ignored, and the user comes from the cookie. Only the no-cookie half is tested (test_verify_without_pending_cookie_is_401_even_with_a_user_id). No test sends a valid pending token for user A together with `?user_id=B` and asserts the lookup still uses A. The suite is otherwise strong (69 passed; the reject-parametrisations assert db.queries == 0 / commits == 0, and the WS tests assert not-accepted and an empty registry, so they genuinely bite).",
-      "fix": "Add one case to test_verify_with_pending_token_and_good_code_opens_a_session using `params={\"user_id\": \"someone-else\"}` and keep the existing `users.id = 'user-123'` SQL assertion."
+      "axis": "maintainability",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 56,
+      "description": "The None branches of encrypt_secret/decrypt_secret are unreachable against the real schema: users.totp_secret and admin_users.totp_secret are NOT NULL from 0001 and neither 0002 nor 0003 relaxes that. test_blank_and_null_secrets_stay_blank_both_ways pins behaviour the schema cannot produce, and if a NULL ever did appear the subsequent SET NOT NULL would fail mid-migration rather than being handled.",
+      "fix": "Leave as defensive code, or drop the None branch and let the migration fail loudly on an unexpected NULL."
+    },
+    {
+      "id": "CRB-006",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/security/totp.py",
+      "line": 36,
+      "description": "The 90-second acceptance window is now expressed twice in one file: valid_window=1 in verify_totp (line 33) and the literal (-1, 0, 1) tuple in matched_totp_step (line 39). If one is ever tuned the other will drift.",
+      "fix": "Hoist the window to a module constant (e.g. TOTP_WINDOW_STEPS = 1) and derive both from it — or moot it by removing verify_totp per CRB-001."
+    },
+    {
+      "id": "CRB-007",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/services/totp_lockout.py",
+      "line": 27,
+      "description": "record_failure never clears an expired totp_locked_until; only record_success does. After a lock lapses the column keeps a past timestamp, so the row cannot be read as 'locked' vs 'was locked once' without comparing to now(). Behaviourally correct (lock_seconds_left treats past as unlocked) but makes the column ambiguous for support queries and future admin UI.",
+      "fix": "Set user.totp_locked_until = None on the first failure recorded after the lock has lapsed, or document that the column is a deadline, not a state flag."
+    },
+    {
+      "id": "CRB-008",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "app/config.py",
+      "line": 89,
+      "description": "totp_max_failures and totp_lockout_minutes have no lower bound. TOTP_MAX_FAILURES=0 locks an account on the very first bad code (record_failure increments to 1 and 1 >= 0), and a negative value does the same — a misconfiguration self-DoS. Consistent with the rest of Settings (jwt_expiry_hours is unconstrained too), so noted rather than blocked.",
+      "fix": "Constrain with Field(5, ge=1) / Field(15, ge=1) if the project starts validating settings."
+    },
+    {
+      "id": "CRB-009",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/integration/test_totp_secret_migration.py",
+      "line": 35,
+      "description": "_alembic and the create_async_engine/dispose helper duplicate tests/integration/test_shared_migrations.py:25 and :50 near-verbatim. Trivial glue, but it is the second copy and a third is likely with the next migration.",
+      "fix": "Move _alembic and the engine helper into a shared integration conftest fixture and import it in both modules."
+    },
+    {
+      "id": "CRB-010",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "maintainability",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 12,
+      "description": "The docstring's 'keyset-paged in batches of BATCH_SIZE' can be read as lock relief, but every batch runs inside the migration's single transaction and is followed by SET NOT NULL, which takes ACCESS EXCLUSIVE over the whole table. The batching bounds result-set memory only.",
+      "fix": "Reword to 'bounded result sets (one transaction; the table is exclusively locked for the whole migration)' so a future operator does not assume an online migration."
     }
-  ],
-  "verification": {
-    "tests_run": "node .claude/scripts/run-compact.js --kind test -- .venv/Scripts/python.exe -m pytest -q tests/unit/test_auth.py tests/unit/test_auth_service.py tests/unit/test_dependencies.py tests/unit/test_notifications.py",
-    "result": "69 passed, 0 failed"
-  },
-  "checked_and_clear": [
-    "Cookie path /api/auth/totp matches request path /api/auth/totp/verify under RFC 6265 5.1.4 prefix rule; delete_cookie repeats the same path/attrs",
-    "Max-Age=600 == int(PENDING_2FA_TTL.total_seconds()); HttpOnly/Secure/SameSite=Lax present; no access_token cookie on the totp_setup branch",
-    "No in-repo caller of POST /api/auth/totp/verify or of /api/notifications/ws (installer/ does not call the API), so dropping the user_id parameter breaks no caller",
-    "totp_verified is written in exactly one place (auth.py:159), now cookie-bound; only one @router.websocket exists",
-    "Starlette 0.37 (fastapi 0.111) delete_cookie accepts secure/httponly/samesite; structlog 24.2.0 is in requirements and the logger name follows the project's '<pkg>.<module>' convention",
-    "_unregister is exception-safe in finally, removes only this socket by identity, and drops empty entries; no await between registry mutations so no interleaving race",
-    "SameSite=Lax + POST means the pending cookie is not sent on cross-site CSRF attempts against /totp/verify"
   ]
 }

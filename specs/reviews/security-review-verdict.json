@@ -1,136 +1,156 @@
 {
   "gate": "security",
-  "scope": {
-    "branch": "fix/auth-bypass",
-    "range": "53a8844..HEAD",
-    "stories": ["CHG-003", "CHG-004"],
-    "risks": ["R17", "R18"],
-    "files_reviewed": [
-      "app/routers/auth.py",
-      "app/services/auth_service.py",
-      "app/dependencies.py",
-      "app/routers/notifications.py",
-      "app/security/totp.py",
-      "app/security/rate_limiter.py",
-      "app/config.py",
-      "app/main.py",
-      "nginx/nginx.conf"
-    ]
-  },
   "verdict": "PASS",
+  "reviewer": "security-reviewer",
+  "range": "e483f81..HEAD",
   "pass": true,
   "block_severities": ["critical", "high"],
-  "summary": { "block": 0, "warn": 1, "info": 9 },
+  "scope": {
+    "branch": "feat/totp-and-consent",
+    "stories": ["CHG-005", "CHG-006"],
+    "risks": ["R6", "R17", "SEC-004"],
+    "mode": "adversarial",
+    "files_reviewed": [
+      "alembic/versions/0004_encrypt_totp_secret.py",
+      "alembic/versions/0005_totp_lockout.py",
+      "app/routers/auth.py",
+      "app/services/totp_lockout.py",
+      "app/security/totp.py",
+      "app/security/encryption.py",
+      "app/security/pii_policy.py",
+      "app/security/audit_log.py",
+      "app/security/rate_limiter.py",
+      "app/services/auth_service.py",
+      "app/dependencies.py",
+      "app/models/user.py",
+      "app/models/admin.py",
+      "app/compliance/deletion.py",
+      "app/config.py",
+      "app/database.py",
+      "app/main.py",
+      "alembic/env.py",
+      "alembic.ini",
+      "alembic/versions/0001_initial_shared_schema.py"
+    ]
+  },
+  "summary": { "block": 0, "warn": 3, "info": 7 },
   "findings": [
     {
-      "id": "SEC-R17-01",
+      "id": "SEC-005-01",
+      "severity": "WARN",
+      "level": "WARN",
+      "category": "sensitive-data-exposure",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 87,
+      "description": "Migration 0004 encrypts each seed into the new column and then drops the plaintext column. On PostgreSQL DROP COLUMN only marks the attribute dropped; the plaintext TOTP seeds stay in the existing heap tuples (and in WAL and in any base backup taken before the migration) until every row is physically rewritten. So after 'upgrade head' the seeds are no longer reachable through SQL but are still recoverable by anyone with file-level, WAL or backup access, which is weaker than the story's 'no plaintext seed at rest' claim. Impact today is limited because the branch is pre-production with no real rows, so this is not a blocking issue.",
+      "fix": "Either rewrite the tables after the contract step (VACUUM FULL / CLUSTER on users and admin_users, or pg_repack) as a documented post-migration operational step, or state in the migration docstring and the story that residual plaintext in heap/WAL/backups is accepted because no production data ever held a real seed. Also rotate any pre-existing backup that contains the plaintext column before go-live."
+    },
+    {
+      "id": "SEC-006-01",
       "severity": "WARN",
       "level": "WARN",
       "category": "authentication",
       "file": "app/routers/auth.py",
-      "line": 150,
-      "description": "The pending_2fa step-up token is not single-use and cannot be revoked server-side. delete_cookie only clears the browser copy; the signed JWT stays valid for the remainder of its 10-minute TTL, and verify_totp_code does not refuse a user whose totp_verified is already True. Anyone holding a copy of the token value plus a current TOTP code can therefore re-run the endpoint and mint another 8-hour access_token without a fresh OAuth login. Exploitation requires possession of the HttpOnly/Secure/path-scoped cookie value, so this is a hardening gap rather than a directly reachable bypass. The endpoint also does not check user.is_active before issuing the session (get_current_user does, so the resulting session is unusable for REST).",
-      "fix": "Make the step-up token single-use: add a jti claim and record consumed jtis in Redis for the token TTL (or store the pending session id on the user row and clear it on success), and reject the request with 401 when user.totp_verified is already True or user.is_active is False."
+      "line": 149,
+      "description": "The exactness of the lockout counter and the replay guard rests entirely on the SELECT ... FOR UPDATE in _pending_2fa_user. with_for_update() is used without populate_existing(), so if the same User row is ever already present in the session identity map when this query runs, SQLAlchemy takes the row lock but hands back the stale in-memory instance (the sessionmaker sets expire_on_commit=False), and totp_failed_attempts / totp_last_used_step would then be read from the stale copy - re-opening the lost-update race the FOR UPDATE was added to close. Verified NOT exploitable today: get_db yields a fresh AsyncSession per request, verify_totp_code declares no dependency that loads a User, and this is the first query in the request, so the identity map is empty and the attributes are freshly read. The exposure is a latent regression risk, not a current bypass.",
+      "fix": "Add .populate_existing() to the with_for_update() select so the locked row's attributes are always refreshed, and add a regression test that pre-loads the User into the session before calling _pending_2fa_user and asserts the counter read is the committed value."
     },
     {
-      "id": "SEC-R18-01",
+      "id": "SEC-005-02",
+      "severity": "WARN",
+      "level": "WARN",
+      "category": "secrets-management",
+      "file": "app/security/encryption.py",
+      "line": 5,
+      "description": "TOTP seeds now share a single Fernet key (settings.fernet_key) with email and every other encrypted column, held in a module-level Fernet built at import time with no MultiFernet rotation path. Two consequences specific to CHG-005: (1) rotating FERNET_KEY makes every stored seed permanently undecryptable, so every user loses their second factor and /totp/verify returns 500 rather than failing gracefully; (2) migration 0004's downgrade silently depends on the exact same key that ran the upgrade, so a key change between upgrade and downgrade turns the documented lossless downgrade into data loss. Widening the blast radius of one key to include authentication secrets is a real weakness, but there is no attacker-reachable path, so it is not blocking.",
+      "fix": "Move to MultiFernet with an ordered key list (primary first) so old keys still decrypt during rotation, consider a separate key or a derived subkey for authentication secrets versus PII, and document the rotation/re-encryption procedure plus the 0004 downgrade's key dependency."
+    },
+    {
+      "id": "SEC-006-02",
       "severity": "INFO",
       "level": "INFO",
-      "category": "authorization",
-      "file": "app/routers/notifications.py",
-      "line": 43,
-      "description": "The WebSocket handshake trusts the signed session token alone: unlike get_current_user it does not reload the User row, so it never checks is_active or totp_verified. A user deactivated mid-session keeps a live notification stream until the 8-hour token expires. Impact is limited to that user's own notifications. CHG-004 records this as an accepted out-of-scope decision.",
-      "fix": "Load the user in the handshake (or maintain a session denylist checked on connect and on push) so deactivation revokes the socket, and drop the user's registry entries when the account is deactivated."
+      "category": "denial-of-service",
+      "file": "app/services/totp_lockout.py",
+      "line": 29,
+      "description": "Assessed, no change required: the new per-account lock cannot be used to deny service to a victim. record_failure is only reachable from POST /api/auth/totp/verify, which first requires a pending_2fa cookie; that cookie is an HS256 JWT signed with settings.app_secret_key (required env var, no default), carries purpose='totp_setup' plus the target user id, is issued only by the OAuth callback after a completed authorisation for that same account, and lives 10 minutes path-scoped to /api/auth/totp. An attacker therefore cannot obtain a pending token naming someone else, and the lock only affects the not-yet-enrolled window - it never touches an already-verified user's 8-hour session (a locked account's existing sessions keep working, and per the 2026-09-25 policy returning users are not asked for a code). Self-inflicted lockout of the attacker's own enrolment is the only reachable case. Brute force is also bounded well below the lock: 5 attempts consume the whole 10-minute pending-token TTL, so the 15-minute lock cannot even be waited out inside one session.",
+      "fix": "None. If the policy later changes so that verified users must pass TOTP at login, re-assess this finding: at that point a lock would deny login to a victim and the counter would need an IP/attempt dimension or a support-side unlock path."
     },
     {
-      "id": "SEC-R18-02",
+      "id": "SEC-005-03",
       "severity": "INFO",
       "level": "INFO",
-      "category": "csrf",
-      "file": "app/routers/notifications.py",
-      "line": 41,
-      "description": "The handshake performs no Origin/Host validation, so cross-site WebSocket hijacking is prevented solely by the access_token cookie being SameSite=Lax (browsers do not attach Lax cookies to cross-site WebSocket handshakes). The mitigation is real and enabled on both cookie-setting paths, so this is defence-in-depth only. Documented as out of scope in CHG-004.",
-      "fix": "Reject handshakes whose Origin header is absent or not in an allowlist (settings.frontend_url / app_base_url) before accept()."
+      "category": "error-handling",
+      "file": "app/compliance/deletion.py",
+      "line": 86,
+      "description": "Anonymisation writes the sentinel b\"\" into totp_secret_encrypted, and migration 0004 special-cases b\"\" <-> \"\" in both directions, but app.security.encryption.decrypt has no such case: Fernet.decrypt(b\"\") raises InvalidToken. The two decrypt call sites in app/routers/auth.py (the enrolment URI at line 127 and the verification at line 168) would therefore 500 on an anonymised row. Practically unreachable today: both sites run only while totp_verified is False, and anonymisation is reached through a session-authenticated endpoint that a user can only hold after verifying TOTP, so an anonymised row is always totp_verified=True and _pending_2fa_user rejects it with 401 first. The failure is also fail-closed (a 500 with a generic body, no code check, no session issued).",
+      "fix": "Have decrypt() (or a thin helper used by the auth router) treat an empty token as an empty string, mirroring decrypt_secret in migration 0004, and raise an explicit 'account anonymised' 401 instead of letting InvalidToken surface as a 500."
     },
     {
-      "id": "SEC-R17-02",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "sensitive-data-exposure",
-      "file": "app/routers/auth.py",
-      "line": 146,
-      "description": "code is declared as a bare str, so FastAPI reads it as a query parameter: the TOTP code travels in the request URL and lands in nginx access logs, uvicorn logs and any intermediary. The code alone is now useless without the pending_2fa cookie, which keeps the impact low, but a short-lived authentication factor should not be logged.",
-      "fix": "Accept the code in a Pydantic request body model (e.g. TotpVerifyRequest) instead of a query parameter."
-    },
-    {
-      "id": "SEC-R17-03",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "authentication",
-      "file": "app/routers/auth.py",
-      "line": 143,
-      "description": "TOTP verification has no per-account throttling or lockout: the 10/minute limit is keyed on the remote address (slowapi get_remote_address), and verify_totp uses valid_window=1 with no used-code cache, so a code is replayable for roughly 90 seconds. Guessing another user's code is not reachable because the endpoint now requires that user's pending_2fa cookie, so this is residual hardening.",
-      "fix": "Add a per-user attempt counter with lockout in Redis, and record consumed (user_id, code) pairs for the validity window to prevent replay."
-    },
-    {
-      "id": "SEC-ADM-01",
+      "id": "SEC-006-03",
       "severity": "INFO",
       "level": "INFO",
       "category": "authentication",
-      "file": "app/dependencies.py",
-      "line": 38,
-      "description": "get_current_admin was not hardened alongside session_user_id: it decodes the token and only requires an admin_sub claim, without rejecting purpose-bound JWTs. Not exploitable today - pending_2fa tokens carry only sub and purpose, and no code path anywhere in app/ ever issues a token containing admin_sub (admin login is unimplemented), so the admin dependency is currently unreachable. The inconsistency becomes a token-confusion risk as soon as admin login is added.",
-      "fix": "Route admin tokens through a shared helper that rejects any token carrying a purpose claim, mirroring session_user_id."
+      "file": "alembic/versions/0005_totp_lockout.py",
+      "line": 31,
+      "description": "The lockout and replay columns were added to users only; admin_users received the encrypted-seed rename from CHG-005 but no totp_failed_attempts / totp_locked_until / totp_last_used_step. This is not a live gap - there is no admin TOTP verification endpoint anywhere in app/, and nothing sets admin_users.totp_verified, so no admin code check is brute-forceable today - but app/dependencies.py line 47 already gates admin access on admin.totp_verified, so an admin verify endpoint is expected.",
+      "fix": "When the admin TOTP endpoint is implemented, reuse app/services/totp_lockout.py (it only needs the three attributes, not the User class) and add the same three columns to admin_users in a follow-up migration; note the dependency in the CHG-006 story so it is not missed."
     },
     {
-      "id": "SEC-OAUTH-01",
+      "id": "SEC-006-04",
       "severity": "INFO",
       "level": "INFO",
-      "category": "authentication",
+      "category": "error-handling",
+      "file": "app/services/totp_lockout.py",
+      "line": 15,
+      "description": "lock_seconds_left compares user.totp_locked_until against a timezone-aware now. PostgreSQL timestamptz returns aware datetimes through asyncpg so production is correct, but SQLAlchemy's DateTime(timezone=True) round-trips as naive on SQLite, where 'until <= now' raises TypeError. Any SQLite-backed deployment or future integration test would get a 500 from /totp/verify instead of a lock decision. The behaviour is fail-closed (no code is compared and no session is issued), so this is robustness rather than a security hole.",
+      "fix": "Normalise the stored value before comparing (treat a naive totp_locked_until as UTC) in lock_seconds_left, or assert timezone-awareness with a clear error, and cover it with a unit test."
+    },
+    {
+      "id": "SEC-006-05",
+      "severity": "INFO",
+      "level": "INFO",
+      "category": "input-validation",
       "file": "app/routers/auth.py",
-      "line": 78,
-      "description": "Pre-existing, untouched by this diff: the OAuth callback matches an existing account by email_hash only and never compares oauth_provider/oauth_sub. A provider that returns an attacker-controlled or unverified email address would let the attacker log in as an existing account created through a different provider. Noted here because it is the remaining unauthenticated-to-session path in this flow, not a regression from CHG-003.",
-      "fix": "Verify the email is provider-verified and bind the login to the stored (oauth_provider, oauth_sub) pair, requiring an explicit account-linking step for a new provider."
+      "line": 179,
+      "description": "TotpVerifyRequest.code is an unbounded str with no length or charset constraint, and it reaches matched_totp_step, which calls pyotp.utils.strings_equal (NFKC-normalising both operands) up to three times per request. A multi-megabyte 'code' therefore costs CPU per attempt. Bounded in practice by the 10/minute per-IP slowapi limit and by the per-account lockout, and no worse than the previous verify_totp path, so informational. A malformed code correctly returns None from matched_totp_step and is counted as a failure, so validation is not needed for correctness.",
+      "fix": "Constrain the field, e.g. code: str = Field(min_length=6, max_length=8, pattern=r'^[0-9]{6,8}$'), so oversized input is rejected by Pydantic before any crypto work."
     },
     {
-      "id": "SEC-DEPLOY-01",
+      "id": "SEC-005-04",
       "severity": "INFO",
       "level": "INFO",
-      "category": "configuration",
-      "file": "nginx/nginx.conf",
-      "line": 70,
-      "description": "Pre-existing deployment mismatch: nginx only sets proxy_http_version 1.1 and the Upgrade/Connection headers under location /ws/, but the route is /api/notifications/ws/{user_id}, which matches location /api/ and is proxied without the upgrade headers. Behind the shipped proxy the WebSocket cannot complete its handshake, so the new R18 auth check has never run in a proxied deployment. Not a vulnerability, but it means the control is unverified end-to-end.",
-      "fix": "Add the upgrade headers to a location that matches the real path (for example location /api/notifications/ws/) or move the endpoint under /ws/."
+      "category": "logging",
+      "file": "alembic/versions/0004_encrypt_totp_secret.py",
+      "line": 103,
+      "description": "The downgrade binds decrypted TOTP seeds as UPDATE parameters. Safe as shipped: alembic.ini sets the sqlalchemy.engine logger to WARN and alembic/env.py builds its engine without echo, so no parameter values are logged; the upgrade direction only ever binds ciphertext. But raising SQLAlchemy engine logging to INFO/DEBUG, or running the downgrade through an engine like app/database.py's (echo=True whenever APP_ENV=development), would write every plaintext seed into application logs. Nothing in the diff warns about this.",
+      "fix": "Add a line to the 0004 docstring stating that the downgrade must not be run with SQLAlchemy engine logging at INFO/DEBUG, and keep the alembic.ini sqlalchemy.engine level at WARN (worth a config assertion in the migration test)."
     },
     {
-      "id": "SEC-DEP-01",
+      "id": "SEC-006-06",
       "severity": "INFO",
       "level": "INFO",
-      "category": "dependency",
-      "file": "requirements.txt",
-      "line": 18,
-      "description": "Not in the change set (no manifest was modified, so no audit was run), but noted because the new tokens depend on it: python-jose 3.3.0 carries CVE-2024-33663 (algorithm confusion) and CVE-2024-33664 (JWE decompression DoS). Neither applies to this code path - tokens are HS256 with a symmetric secret and decode pins algorithms=[settings.jwt_algorithm], and no JWE is consumed.",
-      "fix": "Track an upgrade to a patched JWT library (python-jose >= 3.4 or PyJWT) in dependency maintenance."
-    },
-    {
-      "id": "SEC-POLICY-01",
-      "severity": "INFO",
-      "level": "INFO",
-      "category": "authentication",
-      "file": "app/routers/auth.py",
-      "line": 105,
-      "description": "Explicitly out of scope and not blocking, recorded for the product decision: TOTP is enrolment-only. Once totp_verified is True, the OAuth callback issues an 8-hour session with no second factor, so the system provides 2FA at registration rather than at each login. CHG-003 states this policy is unchanged and pending a product decision.",
-      "fix": "Product decision: if step-up at each login is wanted, route verified users through the same pending_2fa flow and require a code before issuing access_token."
+      "category": "dead-code",
+      "file": "app/security/totp.py",
+      "line": 30,
+      "description": "verify_totp is now dead production code - matched_totp_step replaced its only caller, and the remaining references are tests. It is a security-relevant leftover because it performs a bare code check with valid_window=1 and no lockout or replay bookkeeping, so a future caller that reaches for the obvious-looking helper would silently bypass both CHG-006 controls.",
+      "fix": "Delete verify_totp (and retarget its tests at matched_totp_step), or mark it private/deprecated with a docstring pointing callers at _check_totp_code."
     }
   ],
+  "resolved_in_this_range": [
+    "SEC-R17-03 (previous review, INFO - no per-account TOTP throttling and a code replayable for ~90s) is closed: app/services/totp_lockout.py adds a per-account consecutive-failure counter with a 15-minute lock, and totp_last_used_step rejects any code for an already-accepted time step.",
+    "SEC-004 / R6 (plaintext TOTP seed at rest) is closed at the schema and application level: users.totp_secret_encrypted and admin_users.totp_secret_encrypted are LargeBinary NOT NULL Fernet, no code path reads a plaintext totp_secret attribute any more (verified by grep over app/), and pii_policy.KNOWN_VIOLATIONS is empty while _is_protected still classifies the renamed columns as protected via the _encrypted suffix. See SEC-005-01 for the residual on-disk remanence caveat."
+  ],
   "verified_controls": [
-    "Pending token forgery: create/decode use HS256 with settings.app_secret_key (required env var, no default or hardcoded fallback) and decode pins algorithms=[jwt_algorithm], so alg=none/confusion is not possible; python-jose verifies exp by default and ExpiredSignatureError maps to 401.",
-    "Cross-purpose replay is blocked in both directions: session_user_id rejects any token carrying a purpose claim (used by get_current_user and the WebSocket), and decode_pending_2fa_token requires purpose == 'totp_setup', so a plain access_token is rejected at /totp/verify.",
-    "No remaining unauthenticated session issuance: create_access_token has exactly two call sites, both gated - after authorize_access_token in the OAuth callback, and after decode_pending_2fa_token plus verify_totp in /totp/verify. The callback's totp_setup branch sets no access_token cookie.",
-    "Cookie attributes: pending_2fa is HttpOnly, Secure, SameSite=Lax, Max-Age=600, scoped to /api/auth/totp; delete_cookie uses the same key/path/attrs and Starlette 0.37.2 accepts those kwargs, so the clear matches the set and the cookie is not sent to any other route.",
-    "CSRF on POST /api/auth/totp/verify: SameSite=Lax withholds pending_2fa on cross-site POSTs, so a forged submission gets 401; CORS is restricted to settings.frontend_url so the response is unreadable cross-origin. A successful forgery would also require a valid TOTP code.",
-    "Admin token confusion: pending_2fa tokens carry no admin_sub, user session tokens carry no admin_sub, and nothing in app/ issues admin tokens, so neither token type satisfies get_current_admin.",
-    "WebSocket close-before-accept: Starlette permits websocket.close in the CONNECTING state, so the handshake is denied before accept() and the socket is never added to _connections; the identity check is an exact string comparison of the token sub against the path user_id, and a missing/invalid/purpose-bound token yields None which never equals a path segment.",
-    "WebSocket cleanup: _unregister is membership-guarded and pops empty entries, and the finally block cannot raise KeyError/ValueError; push_to_user iterates a copy and logs failures instead of swallowing them."
+    "No lost-update race on the failure counter: get_db opens a fresh AsyncSession per request, _pending_2fa_user's SELECT ... FOR UPDATE is the first statement in that transaction, and the failure path commits inside _check_totp_code before raising, so concurrent attempts against one account serialise on the row lock and each re-reads the committed counter (PostgreSQL re-fetches the latest row version for FOR UPDATE under READ COMMITTED).",
+    "No lock evasion: the lock is checked before any code comparison and before any counter mutation, a locked request returns 429 with Retry-After and leaves the counters untouched, and the failure that reaches totp_max_failures sets totp_locked_until and commits in the same call - so the lock is durable and cannot be dropped by abandoning the request. record_success is the only reset path and it requires a genuine non-replayed match.",
+    "Brute-force budget is strictly smaller than the lock: the pending_2fa token lives 10 minutes, so the 5 permitted attempts expire the token before the 15-minute lock lifts; the per-IP 10/minute slowapi limit is an additional, independent bound.",
+    "Replay guard is monotonic and covers the whole acceptance window: matched_totp_step scans offsets -1/0/+1 and returns pyotp's timecode(for_time)+offset, and is_replayed_step rejects any step <= totp_last_used_step, so a code accepted at step N cannot be reused at N or earlier; a replay is additionally counted as a failure.",
+    "Constant-time comparison: matched_totp_step uses pyotp.utils.strings_equal (hmac.compare_digest) rather than ==. The early return on match makes total latency depend on which of the three offsets matched, which discloses nothing beyond the already-returned success.",
+    "No SQL injection in either migration: table and column names in 0004/0005 are module-level constants, rewrite_column builds its statements with sa.table/sa.select/sa.table.update and passes ids and values as bind parameters, and the keyset page filter uses bindparam-backed comparisons - no f-string or concatenated identifier or value anywhere.",
+    "Migration 0004 keyset paging is sound and cannot skip rows: id is String(36) on both users and admin_users (0001), the UPDATE never changes id, and the same column drives both ORDER BY and the '> after' filter. totp_secret was NOT NULL in 0001 for both tables, so encrypt_secret never returns None and the subsequent NOT NULL alter cannot fail on existing data. The revision chain is linear (0001 -> 0002 -> 0003 -> 0004 -> 0005) with no branch.",
+    "Round-trip is lossless by construction: encrypt_secret maps '' -> b\"\" and None -> None, decrypt_secret maps b\"\" -> '' and None -> None, and Fernet round-trips everything else, so the anonymisation sentinel never becomes a ciphertext of nothing and the downgrade restores the exact original string.",
+    "No seed or code leakage to clients or logs: the new auth.totp_failed audit event carries only details={'reason': 'invalid'|'replayed'}, auth.totp_locked carries only the user id, audit() never receives a secret or ciphertext, the 429/400 bodies contain no account state beyond locked-vs-invalid (and reaching either already requires that account's pending token), and the global exception handler returns a generic 500 body. The TOTP code stays in the request body, not the URL.",
+    "Secrets come from configuration, not source: settings.fernet_key and settings.app_secret_key are declared without defaults in app/config.py, so no hardcoded key or fallback exists; migration 0004 reuses settings.fernet_key rather than embedding one. The two new settings (totp_max_failures=5, totp_lockout_minutes=15) are non-secret policy values.",
+    "No stale attribute references after the rename: a grep of app/ for totp_secret finds only totp_secret_encrypted, so neither the admin model nor deletion nor any schema still reads the dropped column, and no response model or Pydantic schema exposes the encrypted seed."
   ]
 }
