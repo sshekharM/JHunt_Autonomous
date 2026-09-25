@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.compliance.deletion import DeletionMode, execute_deletion
@@ -11,7 +10,11 @@ from app.database import get_db, get_tenant_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.application_service import transition_status
-from app.tenant_models.application import ApplicationStatus, ApplicationStatusLog, JobApplication
+from app.tenant_models.application import (
+    ApplicationStatus,
+    ApplicationStatusLog,
+    JobApplication,
+)
 from app.tenant_models.profile import UserPreferences
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
@@ -35,8 +38,8 @@ class AccountDeletionRequest(BaseModel):
 
 @router.get("/")
 async def list_applications(
-    application_status: Optional[str] = None,
-    portal: Optional[str] = None,
+    application_status: str | None = None,
+    portal: str | None = None,
     limit: int = 20,
     offset: int = 0,
     user: User = Depends(get_current_user),

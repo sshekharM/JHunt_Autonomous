@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_db
-from app.models.portal_account import SystemPortalAccount, PortalAccountHealth
-from app.models.admin import AdminRole
 from app.dependencies import require_role
-from app.security.ip_allowlist import require_server_ip
+from app.models.admin import AdminRole
+from app.models.portal_account import PortalAccountHealth, SystemPortalAccount
 from app.security.audit_log import audit
+from app.security.ip_allowlist import require_server_ip
 
 router = APIRouter(
     prefix="/api/admin/portals", tags=["admin-portals"],
