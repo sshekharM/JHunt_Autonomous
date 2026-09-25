@@ -147,8 +147,12 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
                                     tenant_db=tenant_db,
                                     user_id=user_id,
                                 )
-                            except Exception:
-                                pass
+                            except Exception as feedback_exc:
+                                logger.warning(
+                                    "status_check.feedback_error",
+                                    application_id=app.id,
+                                    error=str(feedback_exc),
+                                )
 
                         logger.info(
                             "status_check.updated",
@@ -183,8 +187,12 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
                                     tenant_db=tenant_db,
                                     note="portal returned 404 — assumed withdrawn",
                                 )
-                            except Exception:
-                                pass
+                            except Exception as transition_exc:
+                                logger.warning(
+                                    "status_check.withdrawal_transition_error",
+                                    application_id=app.id,
+                                    error=str(transition_exc),
+                                )
 
     try:
         _run(_inner())

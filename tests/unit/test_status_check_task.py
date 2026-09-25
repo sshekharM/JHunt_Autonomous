@@ -42,6 +42,24 @@ def test_dispatches_check_task_per_user():
     mock_delay.assert_called_once_with("u1", "u_abc")
 
 
+def test_dispatch_query_filters_active_onboarded_users():
+    """Pin the WHERE clause itself (not just the mocked result) so a mutant
+    flipping is_active/onboarding_complete to != or False is caught."""
+    from app.tasks.status_check import check_all_application_statuses, check_user_application_statuses
+
+    factory = _users_factory([])
+    with patch("app.tasks.status_check.AsyncSessionLocal", factory), patch.object(
+        check_user_application_statuses, "delay"
+    ):
+        check_all_application_statuses.run()
+
+    session = factory.return_value.__aenter__.return_value
+    stmt = session.execute.call_args[0][0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "users.is_active = true" in compiled
+    assert "users.onboarding_complete = true" in compiled
+
+
 def test_dispatch_error_surfaces_from_retry():
     from app.tasks.status_check import check_all_application_statuses
 
@@ -189,18 +207,23 @@ def test_non_outcome_status_change_skips_ml_feedback():
 
 
 def test_record_outcome_failure_does_not_abort_notification():
-    """Bare except around record_outcome must swallow the error and still notify."""
+    """The except around record_outcome must swallow the error, log it, and
+    still let the status-change notification go out."""
     app = _make_app(ApplicationStatus.shortlisted)
     crawler = MagicMock()
     crawler.check_application_status = AsyncMock(return_value="interview")
-    _, ctx = _run_check_user(
-        [app],
-        **{
-            "app.services.application_service._crawler_for_portal": MagicMock(return_value=crawler),
-            "app.ml.feedback.record_outcome": AsyncMock(side_effect=RuntimeError("feedback db down")),
-        },
-    )
+    with patch("app.tasks.status_check.logger") as mock_logger:
+        _, ctx = _run_check_user(
+            [app],
+            **{
+                "app.services.application_service._crawler_for_portal": MagicMock(return_value=crawler),
+                "app.ml.feedback.record_outcome": AsyncMock(side_effect=RuntimeError("feedback db down")),
+            },
+        )
     ctx["app.services.notification_service.notify"].assert_awaited_once()
+    mock_logger.warning.assert_any_call(
+        "status_check.feedback_error", application_id=app.id, error="feedback db down"
+    )
 
 
 def test_crawler_error_containing_404_marks_withdrawn():
@@ -226,21 +249,28 @@ def test_crawler_error_without_404_does_not_transition():
     ctx["app.services.application_service.transition_status"].assert_not_called()
 
 
-def test_withdrawal_transition_failure_after_404_is_swallowed():
-    """Second bare except: even if the withdrawal transition itself raises,
-    check_user_application_statuses must not propagate the error."""
+def test_withdrawal_transition_failure_after_404_is_swallowed_and_logged():
+    """Second except: even if the withdrawal transition itself raises,
+    check_user_application_statuses must not propagate the error, and must
+    log it instead of silently dropping it."""
     app = _make_app(ApplicationStatus.applied)
     crawler = MagicMock()
     crawler.check_application_status = AsyncMock(side_effect=RuntimeError("404 gone"))
     # Should not raise despite transition_status failing.
-    _run_check_user(
-        [app],
-        **{
-            "app.services.application_service._crawler_for_portal": MagicMock(return_value=crawler),
-            "app.services.application_service.transition_status": AsyncMock(
-                side_effect=RuntimeError("transition failed")
-            ),
-        },
+    with patch("app.tasks.status_check.logger") as mock_logger:
+        _run_check_user(
+            [app],
+            **{
+                "app.services.application_service._crawler_for_portal": MagicMock(return_value=crawler),
+                "app.services.application_service.transition_status": AsyncMock(
+                    side_effect=RuntimeError("transition failed")
+                ),
+            },
+        )
+    mock_logger.warning.assert_any_call(
+        "status_check.withdrawal_transition_error",
+        application_id=app.id,
+        error="transition failed",
     )
 
 
