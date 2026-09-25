@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -86,8 +87,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 4  # session length; also the access_token cookie's max-age
     totp_issuer: str = "jH_ANS"
-    totp_max_failures: int = 5  # consecutive bad codes before lockout (CHG-006)
-    totp_lockout_minutes: int = 15
+    totp_max_failures: int = Field(default=5, ge=1)  # consecutive bad codes before lockout (CHG-006)
+    totp_lockout_minutes: int = Field(default=15, ge=1)
 
     @property
     def allowed_ip_list(self) -> list[str]:

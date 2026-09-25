@@ -33,3 +33,20 @@ def test_session_lifetime_defaults_to_four_hours(monkeypatch):
     """Authenticated sessions last 4h by default (product decision 2026-09-25)."""
     monkeypatch.delenv("JWT_EXPIRY_HOURS", raising=False)
     assert Settings(_env_file=None).jwt_expiry_hours == 4
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_totp_max_failures_must_be_at_least_one(monkeypatch, value):
+    """0 or negative would lock every account out on its very first attempt,
+    or never lock any account out -- both nonsensical (CHG-006)."""
+    monkeypatch.setenv("TOTP_MAX_FAILURES", str(value))
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_totp_lockout_minutes_must_be_at_least_one(monkeypatch, value):
+    """0 or negative would mean a lockout that never actually locks anyone out."""
+    monkeypatch.setenv("TOTP_LOCKOUT_MINUTES", str(value))
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
