@@ -12,3 +12,21 @@ coverage: 0%
 learned_rules: 0
 blocked_stories: none
 next_action: Run /brd to start
+
+=== Session 1 ===
+date: 2026-09-25
+mode: brownfield (risk-map close-out + hardening)
+last_commit: bc35c7f (test/deploy-smoke)
+prs_open: #3-#6 (earlier), #7-#13 (this session) — stacked, merge in order #3 -> #13; all CI green
+done:
+  - risk map R5 R6 R8 R9 R11 R16 closed (#7); auth bypasses R17 R18 closed (#8)
+  - TOTP secret encrypted at rest (0004), per-account TOTP lockout (0005), DPDPA consent withdrawal (0006) (#9)
+  - 4h sessions, onboarding uses tenant_session (#10)
+  - ruff safe fixes 526 -> 171 with characterization tests; high-match notification + audit typo + glassdoor fixes (#11)
+  - mypy 57 -> 0; four runtime bugs fixed (#12)
+  - post-deploy smoke tests + runbook docs/deploy-verification.md (#13)
+tests: 983 passed / 12 skipped; with RUN_DB_TESTS=1 on local PostgreSQL 16: 995 passed
+decisions: TOTP at enrolment only (no per-login prompt); session length 4h; account purge NOT approved (deactivated accounts are not hard-deleted)
+blocked_stories: none
+next_action: merge #3-#13 in order; deploy per docs/deploy-verification.md; run `bash scripts/deploy-smoke.sh denied` on the Docker host
+open_items: account purge (needs approval, R12); FERNET_KEY rotation tool; remaining ruff findings (mostly B008 Depends idiom)
