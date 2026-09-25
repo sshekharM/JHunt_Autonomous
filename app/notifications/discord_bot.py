@@ -18,7 +18,7 @@ def _run_bot():
     _client = discord.Client(intents=discord.Intents.default())
     try:
         _loop.run_until_complete(_client.start(settings.discord_bot_token))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - the background bot thread must not crash the process
         logger.error("discord.bot_crash", error=str(exc))
 
 
@@ -33,15 +33,17 @@ async def send_to_channel(channel_id: str, text: str) -> bool:
         logger.warning("discord.not_started")
         return False
     try:
+        import discord
+
         channel = _client.get_channel(int(channel_id))
-        if channel is None:
+        if channel is None or not isinstance(channel, discord.abc.Messageable):
             logger.warning("discord.channel_not_found", channel_id=channel_id)
             return False
         future = asyncio.run_coroutine_threadsafe(channel.send(text), _loop)
         future.result(timeout=10)
         logger.info("discord.sent", channel_id=channel_id)
         return True
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any send failure must be reported, not raised
         logger.error("discord.send_failed", channel_id=channel_id, error=str(exc))
         return False
 
@@ -58,7 +60,7 @@ async def provision_user_channel(user_display_name: str) -> str | None:
         channel_name = f"user-{user_display_name.lower().replace(' ', '-')[:20]}"
 
         import discord
-        overwrites = {
+        overwrites: dict[discord.Role | discord.Member, discord.PermissionOverwrite] = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
@@ -71,6 +73,6 @@ async def provision_user_channel(user_display_name: str) -> str | None:
         channel_id = future.result(timeout=15)
         logger.info("discord.channel_provisioned", name=channel_name, id=channel_id)
         return channel_id
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any provisioning failure must be reported, not raised
         logger.error("discord.provision_failed", user=user_display_name, error=str(exc))
         return None

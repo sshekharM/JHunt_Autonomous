@@ -79,7 +79,7 @@ def wired(monkeypatch):
 
 def _run(db, user):
     data = onboarding.Step1PersonalData(full_name="Asha", phone=PHONE, city="Pune", state="MH")
-    return asyncio.run(onboarding.step1_personal(request=None, data=data, user=user, db=db))
+    return asyncio.run(onboarding.step1_personal(request=None, data=data, user=user, db=db))  # type: ignore[arg-type]
 
 
 def _user():
@@ -164,7 +164,7 @@ def test_step2_professional_updates_and_returns_step3(wired):
     user = _tenant_user()
     data = onboarding.Step2ProfessionalData(current_role="Engineer", years_experience=5)
 
-    result = asyncio.run(onboarding.step2_professional(data=data, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step2_professional(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "step": 3}
     assert user.onboarding_step == 3
@@ -177,7 +177,7 @@ def test_step3_experience_returns_step4(wired):
         work_history=[{"company": "A"}], education=[{"school": "B"}]
     )
 
-    result = asyncio.run(onboarding.step3_experience(data=data, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step3_experience(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "step": 4}
     assert user.onboarding_step == 4
@@ -187,7 +187,7 @@ def test_step4_preferences_returns_step5(wired):
     user = _tenant_user()
     data = onboarding.Step4PreferencesData(desired_roles=["SWE"], preferred_locations=["Remote"])
 
-    result = asyncio.run(onboarding.step4_preferences(data=data, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step4_preferences(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "step": 5}
     assert user.onboarding_step == 5
@@ -199,7 +199,7 @@ def test_step5_skills_returns_step6(wired):
     user = _tenant_user()
     data = onboarding.Step5SkillsData(skills=[{"skill_name": "Python"}])
 
-    result = asyncio.run(onboarding.step5_skills(data=data, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step5_skills(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "step": 6}
     assert user.onboarding_step == 6
@@ -219,23 +219,28 @@ def test_step5_resume_upload_rejects_non_pdf(wired):
     file = _fake_upload_file(content_type="image/png")
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(onboarding.step5_resume_upload(file=file, user=user, db=_FakeDB()))
+        asyncio.run(onboarding.step5_resume_upload(file=file, user=user, db=_FakeDB()))  # type: ignore[arg-type]
     assert exc.value.status_code == 400
 
 
 def test_step5_resume_upload_defaults_filename_when_missing(wired, monkeypatch):
     """Given a PDF with no filename, when step5's resume handler runs, then it
-    falls back to "resume.pdf" -- flipping `or` to `and` would store None instead."""
+    falls back to "resume.pdf" for both the stored MinIO object name and the
+    MasterResume record -- flipping `or` to `and` would pass/store None instead."""
+    received_filenames = []
+
     async def fake_upload(schema, contents, filename):
+        received_filenames.append(filename)
         return "minio/key/1"
 
     monkeypatch.setattr(onboarding, "upload_resume", fake_upload)
     user = _tenant_user()
     file = _fake_upload_file(filename=None)
 
-    result = asyncio.run(onboarding.step5_resume_upload(file=file, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step5_resume_upload(file=file, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "minio_key": "minio/key/1"}
+    assert received_filenames == ["resume.pdf"]
     assert wired.tenant.added[0].original_filename == "resume.pdf"
 
 
@@ -246,7 +251,7 @@ def test_step6_llm_choice_rejects_without_acknowledgment(wired):
     )
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(onboarding.step6_llm_choice(data=data, user=user, db=_FakeDB()))
+        asyncio.run(onboarding.step6_llm_choice(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
     assert exc.value.status_code == 400
 
 
@@ -256,7 +261,7 @@ def test_step6_llm_choice_returns_step7(wired):
         llm_choice=LLMChoice.self_hosted, data_processing_acknowledged=True
     )
 
-    result = asyncio.run(onboarding.step6_llm_choice(data=data, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step6_llm_choice(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "step": 7}
     assert user.onboarding_step == 7
@@ -268,7 +273,7 @@ def test_step7_notifications_returns_step8(wired):
         notification_platform=NotificationPlatform.telegram, telegram_chat_id="123"
     )
 
-    result = asyncio.run(onboarding.step7_notifications(data=data, user=user, db=_FakeDB()))
+    result = asyncio.run(onboarding.step7_notifications(data=data, user=user, db=_FakeDB()))  # type: ignore[arg-type]
 
     assert result == {"ok": True, "step": 8}
     assert user.onboarding_step == 8
@@ -290,7 +295,7 @@ def test_step9_consent_rejects_without_data_processing_consent(wired):
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
-            onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())
+            onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())  # type: ignore[arg-type]
         )
     assert exc.value.status_code == 400
 
@@ -314,7 +319,7 @@ def test_step9_consent_completes_and_redirects(wired, monkeypatch):
     )
 
     result = asyncio.run(
-        onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())
+        onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())  # type: ignore[arg-type]
     )
 
     assert result == {"ok": True, "redirect": "/dashboard"}
@@ -343,7 +348,7 @@ def test_step9_cannot_be_replayed_to_grant_consent_again(wired, monkeypatch):
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
-            onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())
+            onboarding.step9_consent(request=_fake_request(), data=data, user=user, db=_FakeDB())  # type: ignore[arg-type]
         )
     assert exc.value.status_code == 409
     assert recorded == []
@@ -351,11 +356,11 @@ def test_step9_cannot_be_replayed_to_grant_consent_again(wired, monkeypatch):
 
 def test_get_onboarding_status_reports_user_state():
     user = SimpleNamespace(onboarding_step=3, onboarding_complete=False, thumbprint="tp123")
-    result = asyncio.run(onboarding.get_onboarding_status(user=user))
+    result = asyncio.run(onboarding.get_onboarding_status(user=user))  # type: ignore[arg-type]
     assert result == {"step": 3, "complete": False, "thumbprint": "tp123"}
 
 
 def test_get_onboarding_status_reports_missing_thumbprint():
     user = SimpleNamespace(onboarding_step=1, onboarding_complete=False, thumbprint=None)
-    result = asyncio.run(onboarding.get_onboarding_status(user=user))
+    result = asyncio.run(onboarding.get_onboarding_status(user=user))  # type: ignore[arg-type]
     assert result == {"step": 1, "complete": False, "thumbprint": None}

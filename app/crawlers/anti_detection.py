@@ -5,7 +5,7 @@ Simulates human-like browsing behaviour to avoid bot detection.
 import asyncio
 import random
 
-from playwright.async_api import BrowserContext, Page
+from playwright.async_api import BrowserContext, Page, ViewportSize
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -16,7 +16,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 ]
 
-VIEWPORTS = [
+VIEWPORTS: list[ViewportSize] = [
     {"width": 1920, "height": 1080},
     {"width": 1440, "height": 900},
     {"width": 1366, "height": 768},
@@ -38,7 +38,7 @@ def random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
 
-def random_viewport() -> dict:
+def random_viewport() -> ViewportSize:
     return random.choice(VIEWPORTS)
 
 

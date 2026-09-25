@@ -5,7 +5,7 @@ test_*_crawler.py files under tests/unit/.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 
 class FakeElement:
@@ -188,17 +188,19 @@ class FakeAsyncClient:
     def __init__(self, response: FakeResponse | None = None, raise_exc: Exception | None = None):
         self._response = response
         self._raise = raise_exc
+        self.init_kwargs: dict[str, Any] = {}
 
     def __call__(self, *args: Any, **kwargs: Any) -> FakeAsyncClient:
+        self.init_kwargs = kwargs
         return self
 
-    async def __aenter__(self) -> FakeAsyncClient:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc: object) -> bool:
         return False
 
-    async def get(self, *args: Any, **kwargs: Any) -> FakeResponse:
+    async def get(self, *args: Any, **kwargs: Any) -> FakeResponse | None:
         if self._raise:
             raise self._raise
         return self._response

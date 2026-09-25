@@ -18,6 +18,7 @@ from app.tenant_models.application import (
     ApplicationStatusLog,
     JobApplication,
 )
+from app.tenant_models.job import MatchedJob
 from app.tenant_models.screening_qa import MissingInfoLog
 
 logger = structlog.get_logger("services.application")
@@ -69,7 +70,7 @@ async def apply_to_job(
     shared_db: AsyncSession,
     resume_path: str,
     cover_letter: str,
-    job_record: object | None = None,
+    job_record: MatchedJob | None = None,
 ) -> ApplicationReceipt:
     """
     Full apply flow:
@@ -81,7 +82,6 @@ async def apply_to_job(
     """
     # Resolve job record if not provided
     if job_record is None:
-        from app.tenant_models.job import MatchedJob
         result = await tenant_db.execute(
             select(MatchedJob).where(MatchedJob.id == job_id)
         )
@@ -174,7 +174,7 @@ async def apply_to_job(
                 tenant_db=tenant_db,
                 user_id=user_id,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a feedback-recording failure must not fail the apply
             logger.warning("ml.feedback_record_failed", error=str(exc))
 
     return receipt

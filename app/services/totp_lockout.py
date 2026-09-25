@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from app.config import settings
 from app.models.user import User
+from app.security.audit_log import audit
 
 
 def lock_seconds_left(user: User, now: datetime) -> int:
@@ -30,6 +31,11 @@ def record_failure(user: User, now: datetime) -> None:
     if user.totp_failed_attempts >= settings.totp_max_failures:
         user.totp_failed_attempts = 0
         user.totp_locked_until = now + timedelta(minutes=settings.totp_lockout_minutes)
+        audit(
+            "auth.totp_lockout_started",
+            user_id=user.id,
+            details={"lockout_minutes": settings.totp_lockout_minutes},
+        )
 
 
 def record_success(user: User, step: int) -> None:

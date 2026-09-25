@@ -44,7 +44,9 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# slowapi's handler is typed for (Request, RateLimitExceeded); Starlette's stub
+# wants the general (Request, Exception) -- the library's typing, not ours, is wrong.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 app.add_middleware(
     SessionMiddleware,

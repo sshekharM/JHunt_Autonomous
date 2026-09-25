@@ -50,7 +50,7 @@ async def test_login_success_when_url_leaves_login():
         selectors={"button#onetrust-accept-btn-handler": accept_btn},
     )
     context = FakeContext(pages_to_return=[page])
-    ok = await NaukriCrawler().login(context)
+    ok = await NaukriCrawler().login(context)  # type: ignore[arg-type]
     assert ok is True
 
 
@@ -69,7 +69,7 @@ async def test_login_logs_and_continues_when_cookie_banner_click_fails():
     context = FakeContext(pages_to_return=[page])
 
     with patch("app.crawlers.naukri.logger") as mock_logger:
-        ok = await NaukriCrawler().login(context)
+        ok = await NaukriCrawler().login(context)  # type: ignore[arg-type]
 
     assert ok is True
     mock_logger.debug.assert_called_once_with(
@@ -81,7 +81,7 @@ async def test_login_logs_and_continues_when_cookie_banner_click_fails():
 async def test_login_failure_when_still_on_login_url():
     page = ClickNavPage(url_after_click="https://www.naukri.com/nlogin/login.php?error=1")
     context = FakeContext(pages_to_return=[page])
-    ok = await NaukriCrawler().login(context)
+    ok = await NaukriCrawler().login(context)  # type: ignore[arg-type]
     assert ok is False
 
 
@@ -95,7 +95,7 @@ async def test_login_logs_and_returns_false_when_close_fails_on_exception():
     context = FakeContext(pages_to_return=[page])
 
     with patch("app.crawlers.naukri.logger") as mock_logger:
-        ok = await NaukriCrawler().login(context)
+        ok = await NaukriCrawler().login(context)  # type: ignore[arg-type]
 
     assert ok is False
     mock_logger.warning.assert_called_once_with(
@@ -108,11 +108,23 @@ async def test_search_jobs_uses_api_result_when_status_200():
     context = FakeContext(pages_to_return=[])
     fake_client = FakeAsyncClient(response=FakeResponse(status_code=200, json_data=API_RESPONSE))
     with patch("app.crawlers.naukri.httpx.AsyncClient", fake_client):
-        jobs = await NaukriCrawler().search_jobs(context, keywords=["python"])
+        jobs = await NaukriCrawler().search_jobs(context, keywords=["python"])  # type: ignore[arg-type]
 
     assert len(jobs) == 1
     assert jobs[0].portal_job_id == "111"
     assert jobs[0].skills_required == ["Python"]
+
+
+@pytest.mark.asyncio
+async def test_search_jobs_follows_redirects():
+    """Pins follow_redirects=True on the httpx client -- Naukri's search API
+    redirects on some queries and a False here would silently return 0 jobs."""
+    context = FakeContext(pages_to_return=[])
+    fake_client = FakeAsyncClient(response=FakeResponse(status_code=200, json_data=API_RESPONSE))
+    with patch("app.crawlers.naukri.httpx.AsyncClient", fake_client):
+        await NaukriCrawler().search_jobs(context, keywords=["python"])  # type: ignore[arg-type]
+
+    assert fake_client.init_kwargs["follow_redirects"] is True
 
 
 @pytest.mark.asyncio
@@ -121,7 +133,7 @@ async def test_search_jobs_falls_back_to_scrape_on_non_200():
     context = FakeContext(pages_to_return=[page])
     fake_client = FakeAsyncClient(response=FakeResponse(status_code=500))
     with patch("app.crawlers.naukri.httpx.AsyncClient", fake_client):
-        jobs = await NaukriCrawler().search_jobs(context, keywords=["python"])
+        jobs = await NaukriCrawler().search_jobs(context, keywords=["python"])  # type: ignore[arg-type]
 
     assert jobs == []
     assert page.closed is True
@@ -132,7 +144,7 @@ async def test_search_jobs_returns_empty_list_on_exception():
     context = FakeContext(pages_to_return=[])
     fake_client = FakeAsyncClient(raise_exc=RuntimeError("network down"))
     with patch("app.crawlers.naukri.httpx.AsyncClient", fake_client):
-        jobs = await NaukriCrawler().search_jobs(context, keywords=["python"])
+        jobs = await NaukriCrawler().search_jobs(context, keywords=["python"])  # type: ignore[arg-type]
 
     assert jobs == []
 
@@ -147,11 +159,40 @@ def test_parse_api_response_warns_and_skips_on_malformed_item():
     assert jobs == []
 
 
+def test_parse_api_response_leaves_salary_blank_with_exactly_one_placeholder():
+    """Pins `len(placeholders) > 1`, not `>= 1`: a single placeholder holds
+    experience only, so indexing placeholders[1] for salary must not be
+    attempted -- doing so would IndexError and silently drop the job."""
+    item = {
+        "jobId": "222",
+        "title": "Engineer",
+        "companyName": "Acme",
+        "placeholders": [{"label": "3-5 Yrs"}],
+        "jdURL": "https://www.naukri.com/job/222",
+        "jobDescription": "desc",
+        "tagsAndSkills": [],
+    }
+    jobs = NaukriCrawler()._parse_api_response({"jobDetails": [item]})
+
+    assert len(jobs) == 1
+    assert jobs[0].salary_range == ""
+    assert jobs[0].experience_required == "3-5 Yrs"
+
+
+def test_parse_api_response_marks_jobs_not_easy_apply():
+    """Pins is_easy_apply=False: the API path never learns easy-apply status
+    from Naukri, so it must not be defaulted to True."""
+    jobs = NaukriCrawler()._parse_api_response(API_RESPONSE)
+
+    assert len(jobs) == 1
+    assert jobs[0].is_easy_apply is False
+
+
 @pytest.mark.asyncio
 async def test_scrape_search_page_returns_empty_list_on_navigation_error():
     page = FakePage(raise_on_goto=RuntimeError("boom"))
     context = FakeContext(pages_to_return=[page])
-    jobs = await NaukriCrawler()._scrape_search_page(context, "python", "India", 1)
+    jobs = await NaukriCrawler()._scrape_search_page(context, "python", "India", 1)  # type: ignore[arg-type]
     assert jobs == []
     assert page.closed is True
 
@@ -162,7 +203,7 @@ async def test_apply_flags_manual_when_button_missing():
     context = FakeContext(pages_to_return=[page])
     job = RawJob(portal="naukri", portal_job_id="1", title="t", company="c", location="l", job_url="https://x")
 
-    receipt = await NaukriCrawler().apply(context, job, user_profile={})
+    receipt = await NaukriCrawler().apply(context, job, user_profile={})  # type: ignore[arg-type]
 
     assert receipt.success is False
     assert receipt.requires_manual is True
@@ -181,7 +222,7 @@ async def test_apply_flags_manual_when_screening_questions_unanswered():
     context = FakeContext(pages_to_return=[page])
     job = RawJob(portal="naukri", portal_job_id="1", title="t", company="c", location="l", job_url="https://x")
 
-    receipt = await NaukriCrawler().apply(context, job, user_profile={})
+    receipt = await NaukriCrawler().apply(context, job, user_profile={})  # type: ignore[arg-type]
 
     assert receipt.success is False
     assert receipt.failure_reason == "unanswered_screening_questions"
@@ -202,7 +243,7 @@ async def test_apply_succeeds_when_no_screening_questions():
     context = FakeContext(pages_to_return=[page])
     job = RawJob(portal="naukri", portal_job_id="1", title="t", company="c", location="l", job_url="https://x")
 
-    receipt = await NaukriCrawler().apply(context, job, user_profile={})
+    receipt = await NaukriCrawler().apply(context, job, user_profile={})  # type: ignore[arg-type]
 
     assert receipt.success is True
 
@@ -213,7 +254,7 @@ async def test_apply_returns_failure_receipt_on_exception():
     context = FakeContext(pages_to_return=[page])
     job = RawJob(portal="naukri", portal_job_id="1", title="t", company="c", location="l", job_url="https://x")
 
-    receipt = await NaukriCrawler().apply(context, job, user_profile={})
+    receipt = await NaukriCrawler().apply(context, job, user_profile={})  # type: ignore[arg-type]
 
     assert receipt.success is False
     assert receipt.failure_reason == "timeout"
@@ -228,7 +269,7 @@ async def test_check_application_status_finds_matching_row():
         )
     )
     context = FakeContext(pages_to_return=[page])
-    status = await NaukriCrawler().check_application_status(context, "app-123")
+    status = await NaukriCrawler().check_application_status(context, "app-123")  # type: ignore[arg-type]
     assert status == "shortlisted"
 
 
@@ -236,7 +277,7 @@ async def test_check_application_status_finds_matching_row():
 async def test_check_application_status_defaults_to_applied_when_no_match():
     page = FakePage(contents="<div class='applied-job-row'>other</div>")
     context = FakeContext(pages_to_return=[page])
-    status = await NaukriCrawler().check_application_status(context, "app-123")
+    status = await NaukriCrawler().check_application_status(context, "app-123")  # type: ignore[arg-type]
     assert status == "applied"
 
 
@@ -244,7 +285,7 @@ async def test_check_application_status_defaults_to_applied_when_no_match():
 async def test_check_application_status_returns_unknown_on_exception():
     page = FakePage(raise_on_goto=RuntimeError("boom"))
     context = FakeContext(pages_to_return=[page])
-    status = await NaukriCrawler().check_application_status(context, "app-123")
+    status = await NaukriCrawler().check_application_status(context, "app-123")  # type: ignore[arg-type]
     assert status == "unknown"
 
 
@@ -277,8 +318,6 @@ async def test_extract_application_id_finds_match():
 
 @pytest.mark.asyncio
 async def test_extract_application_id_returns_none_on_exception():
-    page = FakePage(raise_on_goto=None)
-
     class _BoomContent(FakePage):
         async def content(self):
             raise RuntimeError("dom gone")

@@ -60,9 +60,9 @@ async def get_context(portal: str) -> BrowserContext:
             ctx = _context_pool[portal]
             # Check if still valid
             try:
-                await ctx.pages  # will throw if closed
+                _ = ctx.pages  # raises if the context/browser was closed
                 return ctx
-            except Exception:
+            except Exception:  # noqa: BLE001 - any failure means the pooled context is unusable
                 del _context_pool[portal]
 
         browser = await _get_browser()
@@ -104,7 +104,7 @@ async def load_session_cookies(portal: str) -> list | None:
     try:
         decrypted = decrypt(raw)
         return json.loads(decrypted)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - corrupt/undecryptable cookie payload must not crash the caller
         logger.warning("session_manager.cookie_load_failed", portal=portal, error=str(exc))
         return None
 
@@ -116,7 +116,7 @@ async def clear_session(portal: str) -> None:
     if portal in _context_pool:
         try:
             await _context_pool[portal].close()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - close() failures must not block pool cleanup
             logger.warning("session_manager.context_close_failed", portal=portal, error=str(exc))
         del _context_pool[portal]
     audit("crawler.session_cleared", details={"portal": portal})
@@ -147,7 +147,7 @@ async def handle_session_expiry(
                     shared_db=shared_db,
                     deep_link=f"/portals/reconnect/{portal}",
                 )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - notification failure must not re-raise past expiry handling
         logger.error("session_manager.expiry_notify_failed", portal=portal, error=str(exc))
 
 
@@ -169,7 +169,7 @@ async def shutdown() -> None:
     for ctx in _context_pool.values():
         try:
             await ctx.close()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - shutdown must close every context even if one fails
             logger.warning("session_manager.context_close_failed", error=str(exc))
     _context_pool.clear()
     if _browser:

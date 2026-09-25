@@ -52,7 +52,7 @@ async def login(request: Request, provider: str):
 
 
 @router.get("/callback/{provider}")
-async def callback(request: Request, provider: str, db: AsyncSession = Depends(get_db)):
+async def callback(request: Request, provider: str, db: AsyncSession = Depends(get_db)):  # noqa: B008 - FastAPI's DI pattern requires the call in the default
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
 
@@ -63,8 +63,6 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
     if provider == "google":
         userinfo = token.get("userinfo") or await client.userinfo(token=token)
         email = userinfo["email"]
-        name = userinfo.get("name", "")
-        avatar = userinfo.get("picture", "")
         sub = userinfo["sub"]
     elif provider == "linkedin":
         resp = await client.get("me", token=token)
@@ -73,10 +71,6 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
         )
         userinfo = resp.json()
         sub = userinfo["id"]
-        first = userinfo.get("localizedFirstName", "")
-        last = userinfo.get("localizedLastName", "")
-        name = f"{first} {last}".strip()
-        avatar = ""
         try:
             email = email_resp.json()["elements"][0]["handle~"]["emailAddress"]
         except (KeyError, IndexError):
@@ -85,19 +79,17 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
         resp = await client.get("me?fields=id,name,email,picture", token=token)
         userinfo = resp.json()
         sub = userinfo["id"]
-        name = userinfo.get("name", "")
         email = userinfo.get("email", "")
-        avatar = userinfo.get("picture", {}).get("data", {}).get("url", "")
 
     if not email:
         raise HTTPException(status_code=400, detail="Email not provided by OAuth provider.")
 
     email_hash = sha256_hash(email.lower())
     result = await db.execute(select(User).where(User.email_hash == email_hash))
-    user = result.scalar_one_or_none()
+    existing_user = result.scalar_one_or_none()
 
-    is_new_user = user is None
-    if is_new_user:
+    is_new_user = existing_user is None
+    if existing_user is None:
         # New user — create record; onboarding will complete the profile
         user = User(
             id=str(uuid.uuid4()),
@@ -116,6 +108,8 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
         await db.commit()
         await db.refresh(user)
         audit("user.created", user_id=user.id, details={"provider": provider})
+    else:
+        user = existing_user
 
     if not user.totp_verified:
         return _totp_setup_response(user, email, is_new_user)
@@ -211,7 +205,7 @@ async def verify_totp_code(
     request: Request,
     body: TotpVerifyRequest,
     pending_2fa: str | None = Cookie(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     user = await _pending_2fa_user(pending_2fa, db)
     await _check_totp_code(user, body.code, db)
@@ -235,7 +229,7 @@ async def verify_totp_code(
 @router.post("/logout")
 async def logout(
     response: Response,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     audit("auth.logout", user_id=user.id)
     response.delete_cookie("access_token")

@@ -2,7 +2,7 @@
 Celery tasks for autonomous job application.
 """
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import structlog
 from sqlalchemy import func, select
@@ -53,7 +53,7 @@ def auto_apply_for_all_users(self):
 
     try:
         _run(_inner())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any dispatch failure must trigger a Celery retry
         logger.error("auto_apply.dispatch_error", error=str(exc))
         raise self.retry(exc=exc, countdown=60)
 
@@ -110,7 +110,7 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                     await tenant_db.commit()
 
                 # Count today's applications
-                today_start = datetime.combine(date.today(), datetime.min.time()).replace(
+                today_start = datetime.combine(now.date(), datetime.min.time()).replace(
                     tzinfo=timezone.utc
                 )
                 count_result = await tenant_db.execute(
@@ -136,13 +136,16 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                 )
                 applied_job_ids = {r[0] for r in applied_job_ids_result.fetchall()}
 
+                job_filters = [
+                    MatchedJob.is_active.is_(True),
+                    MatchedJob.match_score >= prefs.match_threshold,
+                ]
+                if applied_job_ids:
+                    job_filters.append(MatchedJob.id.not_in(applied_job_ids))
+
                 jobs_result = await tenant_db.execute(
                     select(MatchedJob)
-                    .where(
-                        MatchedJob.is_active == True,
-                        MatchedJob.match_score >= prefs.match_threshold,
-                        MatchedJob.id.not_in(applied_job_ids) if applied_job_ids else True,
-                    )
+                    .where(*job_filters)
                     .order_by(MatchedJob.match_score.desc())
                     .limit(remaining_cap)
                 )
@@ -221,7 +224,7 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                             user_llm_choice=llm_choice,
                         )
                         tailored["name"] = (
-                            decrypt(profile.full_name_encrypted).decode()
+                            decrypt(profile.full_name_encrypted)
                             if profile
                             else "Candidate"
                         )
@@ -231,7 +234,7 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                             schema_name=schema_name,
                             job_id=job.id,
                         )
-                        tailored_resume_id = await resume_service.store_tailored_resume(
+                        await resume_service.store_tailored_resume(
                             user_id=user_id,
                             job_id=job.id,
                             pdf_minio_key=minio_key,
@@ -277,7 +280,7 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
                             shared_db=shared_db,
                         )
 
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - one job's failure must not stop the rest
                         logger.error(
                             "auto_apply.job_error",
                             user_id=user_id,
@@ -288,6 +291,6 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
 
     try:
         _run(_inner())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure must trigger a Celery retry
         logger.error("apply_matched_jobs.error", user_id=user_id, error=str(exc))
         raise self.retry(exc=exc, countdown=120)

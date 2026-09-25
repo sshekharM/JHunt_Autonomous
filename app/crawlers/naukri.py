@@ -42,7 +42,7 @@ class NaukriCrawler(BaseCrawler):
             try:
                 await page.click("button#onetrust-accept-btn-handler", timeout=3000)
                 await micro_delay()
-            except Exception as banner_exc:
+            except Exception as banner_exc:  # noqa: BLE001
                 logger.debug("naukri.cookie_banner_not_present", error=str(banner_exc))
 
             await human_type(page, "input#usernameField", settings.naukri_system_email)
@@ -63,12 +63,12 @@ class NaukriCrawler(BaseCrawler):
             await page.close()
             return False
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("naukri.login_error", error=str(exc))
             audit("crawler.login_failed", details={"portal": "naukri"}, error=exc)
             try:
                 await page.close()
-            except Exception as close_exc:
+            except Exception as close_exc:  # noqa: BLE001
                 logger.warning("naukri.page_close_failed", error=str(close_exc))
             return False
 
@@ -94,7 +94,7 @@ class NaukriCrawler(BaseCrawler):
             "appid": "109",
             "systemid": "Naukri",
         }
-        params = {
+        params: dict[str, str | int] = {
             "noOfResults": 20,
             "urlType": "search_by_keyword",
             "searchType": "adv",
@@ -116,7 +116,7 @@ class NaukriCrawler(BaseCrawler):
             # Fallback: Playwright scrape
             return await self._scrape_search_page(context, keyword_str, location, page_num)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("naukri.search_error", error=str(exc))
             return []
 
@@ -140,7 +140,7 @@ class NaukriCrawler(BaseCrawler):
                 )
                 if job.portal_job_id and job.title:
                     jobs.append(job)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning("naukri.parse_item_error", error=str(exc))
         return jobs
 
@@ -184,11 +184,12 @@ class NaukriCrawler(BaseCrawler):
                     )
                     if job.portal_job_id and job.title:
                         jobs.append(job)
-                except Exception:
+                except Exception as exc:  # noqa: BLE001 - one malformed card must not stop the page
+                    logger.debug("naukri.scrape_item_error", error=str(exc))
                     continue
 
             return jobs
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("naukri.scrape_error", error=str(exc))
             return []
         finally:
@@ -244,7 +245,7 @@ class NaukriCrawler(BaseCrawler):
             audit("crawler.applied", details={"portal": "naukri", "job_id": job.portal_job_id})
             return ApplicationReceipt(success=True, portal_application_id=app_id)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("naukri.apply_error", job_id=job.portal_job_id, error=str(exc))
             return ApplicationReceipt(success=False, failure_reason=str(exc))
         finally:
@@ -273,7 +274,7 @@ class NaukriCrawler(BaseCrawler):
                     if status_el:
                         return status_el.get_text(strip=True).lower()
             return "applied"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("naukri.status_check_error", app_id=portal_application_id, error=str(exc))
             return "unknown"
         finally:
@@ -305,5 +306,5 @@ class NaukriCrawler(BaseCrawler):
             content = await page.content()
             match = re.search(r"application[_\s]?id[\":\s]+([A-Z0-9\-]+)", content, re.IGNORECASE)
             return match.group(1) if match else None
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None

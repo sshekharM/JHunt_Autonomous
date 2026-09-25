@@ -112,11 +112,11 @@ async def _run_crawl(portal_name: str) -> dict:
             ]
 
             async with AsyncSessionLocal() as db:
-                result = await store_jobs(job_dicts, db, portal_name)
-            total_inserted += result["inserted"]
-            total_updated += result["updated"]
+                store_result = await store_jobs(job_dicts, db, portal_name)
+            total_inserted += store_result["inserted"]
+            total_updated += store_result["updated"]
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one keyword group's failure must not stop the rest
             logger.error(
                 "crawl_portal.keyword_group_failed",
                 portal=portal_name,
@@ -169,7 +169,7 @@ def crawl_portal(self, portal_name: str):
     try:
         result = asyncio.run(_run_crawl(portal_name))
         return result
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure must trigger a Celery retry
         logger.error("crawl_portal.failed", portal=portal_name, error=str(exc))
         audit("crawl.failed", details={"portal": portal_name, "error": str(exc)})
         raise self.retry(exc=exc)
