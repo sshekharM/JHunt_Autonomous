@@ -27,12 +27,6 @@ def generate_qr_code_base64(uri: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def verify_totp(secret: str, code: str) -> bool:
-    """Verify a TOTP code with a 30-second window tolerance."""
-    totp = pyotp.TOTP(secret)
-    return totp.verify(code, valid_window=1)
-
-
 def matched_totp_step(secret: str, code: str, for_time: datetime) -> int | None:
     """The time step a code was made for, within one step either side of for_time; else None."""
     totp = pyotp.TOTP(secret)
