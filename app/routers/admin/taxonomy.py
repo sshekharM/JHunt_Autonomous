@@ -50,7 +50,7 @@ async def review_skill(
     )
     await db.commit()
     audit(
-        f"admin.taxonomy.skill_{data.action}d",
+        "admin.taxonomy.skill_approved" if new_status == "active" else "admin.taxonomy.skill_rejected",
         admin_id=admin.id,
         details={"skill_id": data.skill_id, "category": data.category},
     )

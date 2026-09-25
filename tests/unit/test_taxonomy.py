@@ -79,7 +79,7 @@ def test_review_skill_approve_sets_active_and_audits(audited):
 
     assert result == {"ok": True, "status": "active"}
     assert db.commits == 1
-    stmt, params = db.executed[0]
+    _, params = db.executed[0]
     assert params == {"s": "active", "cat": "backend", "id": "sk-1"}
     assert audited == [(
         "admin.taxonomy.skill_approved",
@@ -87,7 +87,7 @@ def test_review_skill_approve_sets_active_and_audits(audited):
     )]
 
 
-def test_review_skill_reject_sets_rejected_status():
+def test_review_skill_reject_sets_rejected_status(audited):
     data = admin_taxonomy.SkillReviewAction(skill_id="sk-2", action="reject")
     db = _FakeDB()
 
@@ -96,6 +96,8 @@ def test_review_skill_reject_sets_rejected_status():
     assert result == {"ok": True, "status": "rejected"}
     _, params = db.executed[0]
     assert params == {"s": "rejected", "cat": "", "id": "sk-2"}
+    # was "admin.taxonomy.skill_rejectd" (f"skill_{action}d" on "reject")
+    assert [event for event, _ in audited] == ["admin.taxonomy.skill_rejected"]
 
 
 def test_review_skill_empty_category_falls_back_to_existing_category():
