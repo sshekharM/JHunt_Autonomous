@@ -132,9 +132,12 @@ class TestTOTP:
     """TOTP: generate secret, verify valid/expired/wrong codes."""
 
     def setup_method(self):
-        from app.security.totp import generate_totp_secret, verify_totp
+        from datetime import datetime, timezone
+
+        from app.security.totp import generate_totp_secret, matched_totp_step
         self.generate = generate_totp_secret
-        self.verify = verify_totp
+        self.verify = lambda secret, code: matched_totp_step(
+            secret, code, datetime.now(timezone.utc)) is not None
 
     def test_generate_returns_string(self):
         secret = self.generate()
