@@ -8,10 +8,12 @@ provider), while queuing jobs for human review still runs.
 import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.compliance.dpdpa import ConsentRecord
+from app.security import encryption
 from app.services import application_service, cover_letter_service, resume_service
 from app.tasks import auto_apply
 
@@ -157,6 +159,39 @@ def test_full_consent_goes_on_to_the_resume_tailoring_path(task):
     _apply()
 
     assert task.audits == [] and len(task.llm_calls) == 1  # parse_master_resume reached
+
+
+def test_tailored_resume_name_is_the_decrypted_full_name(task, monkeypatch):
+    """Regression: encryption.decrypt() already returns str, so calling
+    .decode() on its result raised AttributeError for every user with a
+    profile, aborting the apply before apply_to_job was ever reached."""
+    profile = SimpleNamespace(
+        full_name_encrypted=b"enc", current_role="Engineer", years_experience=3
+    )
+    task.tenant = _Tenant(
+        _prefs(hitl=False), 0, [], [_job()], profile, SimpleNamespace(minio_key="k"), []
+    )
+    monkeypatch.setattr(encryption, "decrypt", lambda token: "Jane Doe")
+    monkeypatch.setattr(
+        resume_service, "parse_master_resume", AsyncMock(return_value="master text")
+    )
+    monkeypatch.setattr(
+        resume_service, "generate_tailored_resume", AsyncMock(return_value={"skills": []})
+    )
+    render_mock = AsyncMock(return_value="rendered-key")
+    monkeypatch.setattr(resume_service, "render_tailored_pdf", render_mock)
+    monkeypatch.setattr(resume_service, "store_tailored_resume", AsyncMock(return_value="tr-1"))
+    monkeypatch.setattr(
+        cover_letter_service, "generate_cover_letter", AsyncMock(return_value="cover letter")
+    )
+    apply_mock = AsyncMock()
+    monkeypatch.setattr(application_service, "apply_to_job", apply_mock)
+
+    _apply()
+
+    assert render_mock.await_args is not None
+    assert render_mock.await_args.kwargs["resume_data"]["name"] == "Jane Doe"
+    apply_mock.assert_awaited_once()
 
 
 def test_a_withdrawal_during_the_run_stops_llm_use_for_the_remaining_jobs(task):
