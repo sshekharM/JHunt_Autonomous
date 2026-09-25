@@ -7,6 +7,7 @@ says. The endpoint wiring is covered in tests/unit/test_auth.py.
 """
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,8 +17,8 @@ from app.services import totp_lockout
 NOW = datetime(2026, 9, 25, 10, 0, tzinfo=timezone.utc)
 
 
-def _user(attempts=0, locked_until=None, last_step=None):
-    return SimpleNamespace(totp_failed_attempts=attempts, totp_locked_until=locked_until,
+def _user(attempts=0, locked_until=None, last_step=None, user_id="u1"):
+    return SimpleNamespace(id=user_id, totp_failed_attempts=attempts, totp_locked_until=locked_until,
                            totp_last_used_step=last_step)
 
 
@@ -58,6 +59,30 @@ def test_the_failure_that_reaches_the_limit_locks_and_restarts_the_count():
 
     assert user.totp_locked_until == NOW + timedelta(minutes=settings.totp_lockout_minutes)
     assert user.totp_failed_attempts == 0
+
+
+def test_the_failure_that_reaches_the_limit_is_audited(monkeypatch):
+    mock_audit = MagicMock()
+    monkeypatch.setattr(totp_lockout, "audit", mock_audit)
+    user = _user(attempts=settings.totp_max_failures - 1, user_id="u1")
+
+    totp_lockout.record_failure(user, NOW)
+
+    mock_audit.assert_called_once_with(
+        "auth.totp_lockout_started",
+        user_id="u1",
+        details={"lockout_minutes": settings.totp_lockout_minutes},
+    )
+
+
+def test_failures_below_the_limit_are_not_audited(monkeypatch):
+    mock_audit = MagicMock()
+    monkeypatch.setattr(totp_lockout, "audit", mock_audit)
+    user = _user(attempts=settings.totp_max_failures - 2)
+
+    totp_lockout.record_failure(user, NOW)
+
+    mock_audit.assert_not_called()
 
 
 def test_limits_come_from_settings(monkeypatch):
