@@ -2,6 +2,7 @@
 Pins app.main start-up wiring that the routers rely on: the Windows event-loop
 policy and the credentialed CORS set-up the cookie-based session needs.
 """
+import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -15,7 +16,9 @@ def test_windows_gets_the_selector_event_loop_policy_and_others_keep_the_default
     probe = "import asyncio, app.main; print(type(asyncio.get_event_loop_policy()).__name__)"
     out = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, check=True,
                          capture_output=True, text=True).stdout.strip().splitlines()[-1]
-    expected = "WindowsSelectorEventLoopPolicy" if sys.platform == "win32" else "DefaultEventLoopPolicy"
+    # Elsewhere the app must leave the platform default alone (e.g. _UnixDefaultEventLoopPolicy on Linux).
+    default = asyncio.DefaultEventLoopPolicy.__name__
+    expected = "WindowsSelectorEventLoopPolicy" if sys.platform == "win32" else default
     assert out == expected
 
 
