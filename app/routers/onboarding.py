@@ -85,7 +85,7 @@ class Step9ConsentData(BaseModel):
 
 
 @router.get("/status")
-async def get_onboarding_status(user: User = Depends(get_current_user)):
+async def get_onboarding_status(user: User = Depends(get_current_user)):  # noqa: B008 - FastAPI's DI pattern requires the call in the default
     return {
         "step": user.onboarding_step,
         "complete": user.onboarding_complete,
@@ -97,8 +97,8 @@ async def get_onboarding_status(user: User = Depends(get_current_user)):
 async def step1_personal(
     request: Request,
     data: Step1PersonalData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     """Collect personal info and generate immutable thumbprint."""
     # Derive thumbprint from email + phone
@@ -150,8 +150,8 @@ async def step1_personal(
 @router.post("/step/2")
 async def step2_professional(
     data: Step2ProfessionalData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     async with tenant_session(user.schema_name) as tenant_db:
         result = await tenant_db.execute(text("SELECT id FROM profile LIMIT 1"))
@@ -171,8 +171,8 @@ async def step2_professional(
 @router.post("/step/3")
 async def step3_experience(
     data: Step3ExperienceData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     import json
     async with tenant_session(user.schema_name) as tenant_db:
@@ -193,8 +193,8 @@ async def step3_experience(
 @router.post("/step/4")
 async def step4_preferences(
     data: Step4PreferencesData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     async with tenant_session(user.schema_name) as tenant_db:
         prefs = UserPreferences(
@@ -221,8 +221,8 @@ async def step4_preferences(
 @router.post("/step/5")
 async def step5_skills(
     data: Step5SkillsData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     async with tenant_session(user.schema_name) as tenant_db:
         for s in data.skills:
@@ -241,14 +241,14 @@ async def step5_skills(
 
 @router.post("/step/5/resume")
 async def step5_resume_upload(
-    file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF resumes are accepted.")
     contents = await file.read()
-    minio_key = await upload_resume(user.schema_name, contents, file.filename)
+    minio_key = await upload_resume(user.schema_name, contents, file.filename or "resume.pdf")
     async with tenant_session(user.schema_name) as tenant_db:
         resume = MasterResume(minio_key=minio_key, original_filename=file.filename or "resume.pdf")
         tenant_db.add(resume)
@@ -260,8 +260,8 @@ async def step5_resume_upload(
 @router.post("/step/6")
 async def step6_llm_choice(
     data: Step6LLMChoiceData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     if not data.data_processing_acknowledged:
         raise HTTPException(status_code=400, detail="You must acknowledge the data processing notice.")
@@ -280,8 +280,8 @@ async def step6_llm_choice(
 @router.post("/step/7")
 async def step7_notifications(
     data: Step7NotificationData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     async with tenant_session(user.schema_name) as tenant_db:
         await tenant_db.execute(
@@ -306,8 +306,8 @@ async def step7_notifications(
 async def step9_consent(
     request: Request,
     data: Step9ConsentData,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
+    db: AsyncSession = Depends(get_db),  # noqa: B008 - FastAPI's DI pattern requires the call in the default
 ):
     if user.onboarding_complete:
         # A replay would append a fresh grant and undo a withdrawal (CHG-007).
