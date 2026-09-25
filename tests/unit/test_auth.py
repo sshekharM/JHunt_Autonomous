@@ -86,12 +86,11 @@ class _FakeOAuthClient:
 GOOGLE = _FakeOAuthClient({"userinfo": {"email": EMAIL, "sub": "g-1", "name": "Asha"}}, {})
 
 
-def _user(verified=False, onboarded=False, **lockout):
+def _user(verified=False, onboarded=False, **overrides):
     return SimpleNamespace(
-        id=USER_ID, totp_secret_encrypted=encrypt(SECRET), totp_verified=verified,
-        onboarding_complete=onboarded, is_active=True,
-        **{"totp_failed_attempts": 0, "totp_locked_until": None,
-           "totp_last_used_step": None, **lockout},
+        id=USER_ID, totp_verified=verified, onboarding_complete=onboarded, is_active=True,
+        **{"totp_secret_encrypted": encrypt(SECRET), "totp_failed_attempts": 0,
+           "totp_locked_until": None, "totp_last_used_step": None, **overrides},
     )
 
 
@@ -291,6 +290,8 @@ def test_verify_with_pending_token_and_good_code_opens_a_session(api):
     assert response.json() == {"ok": True, "redirect": "/onboarding"}
     assert f"users.id = '{USER_ID}'" in _sql(api.db.statements[0])
     assert _sql(api.db.statements[0]).endswith("FOR UPDATE")  # CHG-006 AC7
+    # a row already in the session must be refreshed, not served stale, under the lock
+    assert api.db.statements[0].get_execution_options()["populate_existing"] is True
     assert api.db.user.totp_verified is True and api.db.commits == 1
     [session] = _cookies(response, "access_token")
     claims = decode_access_token(_cookie_value(session))
@@ -322,6 +323,15 @@ def test_verify_for_an_onboarded_user_redirects_to_the_dashboard(api):
     response = _verify(api, token=create_pending_2fa_token(USER_ID))
 
     assert response.json() == {"ok": True, "redirect": "/dashboard"}
+
+
+def test_verify_for_a_user_without_a_totp_secret_is_401(api):
+    """An anonymised row holds b"" instead of a ciphertext; refuse it, never 500."""
+    api.db.user = _user(totp_secret_encrypted=b"")
+    response = _verify(api, token=create_pending_2fa_token(USER_ID))
+
+    assert response.status_code == 401
+    assert api.db.commits == 0 and api.events == []
 
 
 def test_verify_for_a_vanished_user_is_404(api):

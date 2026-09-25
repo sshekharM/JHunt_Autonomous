@@ -25,5 +25,4 @@ def test_totp_secret_is_stored_only_encrypted(model):
 
 
 def test_totp_secret_is_no_longer_a_known_pii_violation():
-    assert ("users", "totp_secret") not in KNOWN_VIOLATIONS
-    assert ("admin_users", "totp_secret") not in KNOWN_VIOLATIONS
+    assert KNOWN_VIOLATIONS == set()

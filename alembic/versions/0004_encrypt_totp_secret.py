@@ -22,6 +22,17 @@ Deploy note: expand and contract ship together (accepted for CHG-005 because
 the downgrade is lossless and there is no production data yet). Code older
 than this revision reads totp_secret and cannot run against the new schema,
 so the app must be upgraded in the same step as the migration.
+
+Operational notes (from the CHG-005 reviews):
+  - All batches share the migration's one transaction, and SET NOT NULL takes
+    an ACCESS EXCLUSIVE lock, so batching bounds memory, not lock time.
+  - PostgreSQL DROP COLUMN only hides the column: old plaintext stays in heap
+    pages, WAL and earlier backups until rewritten. Run VACUUM FULL (or
+    pg_repack) on users and admin_users afterwards if that matters.
+  - The ciphertext depends on FERNET_KEY. Changing the key without re-keying
+    makes every TOTP secret unreadable, and this downgrade then fails.
+  - The downgrade binds plaintext secrets; do not run it with SQL engine
+    logging at DEBUG/INFO.
 """
 from collections.abc import Callable
 from functools import partial

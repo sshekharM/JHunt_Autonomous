@@ -226,7 +226,9 @@ Follow-ups: the code now goes in the request body, not the URL. CHG-006 adds
 a per-account lockout: after `totp_max_failures` (5) bad codes in a row, TOTP
 verify for that account returns 429 for `totp_lockout_minutes` (15) and writes
 `auth.totp_locked`. A time step that was already accepted is refused as a
-replay. The user row is read `FOR UPDATE`, so parallel attempts cannot get
+replay. The replay check is defence in depth for now: a successful verify also
+sets `totp_verified`, after which the pending token is refused, so it only
+starts to matter if TOTP is ever checked again after enrolment. The user row is read `FOR UPDATE`, so parallel attempts cannot get
 past the count. The counters are on `users` (migration 0005).
 
 **Decided (2026-09-25, user):** returning users are **not** asked for a TOTP

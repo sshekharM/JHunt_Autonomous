@@ -145,18 +145,29 @@ def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONRespo
 async def _pending_2fa_user(pending_2fa: Optional[str], db: AsyncSession) -> User:
     """User named by a valid pending_2fa cookie; a token for an already-verified user is spent."""
     user_id = decode_pending_2fa_token(pending_2fa)
-    # FOR UPDATE: concurrent attempts for one account queue, so counters and steps stay exact
-    result = await db.execute(select(User).where(User.id == user_id).with_for_update())
+    # FOR UPDATE: concurrent attempts for one account queue, so counters and steps stay exact;
+    # populate_existing so a row already in the session is re-read under the lock, not reused
+    result = await db.execute(
+        select(User).where(User.id == user_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     if user.totp_verified:
         raise HTTPException(status_code=401, detail="Pending 2FA session already used.")
+    if not user.totp_secret_encrypted:  # anonymised: no secret left to check against
+        raise HTTPException(status_code=401, detail="No TOTP enrolment for this account.")
     return user
 
 
 async def _check_totp_code(user: User, code: str, db: AsyncSession) -> None:
-    """Refuse locked accounts, bad codes and replayed time steps (CHG-006)."""
+    """Refuse locked accounts, bad codes and replayed time steps (CHG-006).
+
+    A failure commits its counter here, before raising. A success only updates
+    the counters and leaves the commit to the caller, together with the rest of
+    the successful verification.
+    """
     now = datetime.now(timezone.utc)
     wait = lock_seconds_left(user, now)
     if wait:
