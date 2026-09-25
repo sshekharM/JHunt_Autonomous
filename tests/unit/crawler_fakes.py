@@ -5,25 +5,25 @@ test_*_crawler.py files under tests/unit/.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 class FakeElement:
     """Fake Playwright ElementHandle."""
 
-    def __init__(self, text: str = "", attrs: Optional[dict] = None, children: Optional[dict] = None):
+    def __init__(self, text: str = "", attrs: dict | None = None, children: dict | None = None):
         self.text = text
         self.attrs = attrs or {}
         self.children = children or {}
-        self.filled: Optional[str] = None
-        self.uploaded: Optional[str] = None
-        self.selected: Optional[str] = None
+        self.filled: str | None = None
+        self.uploaded: str | None = None
+        self.selected: str | None = None
         self.clicked = False
 
     async def inner_text(self) -> str:
         return self.text
 
-    async def get_attribute(self, name: str) -> Optional[str]:
+    async def get_attribute(self, name: str) -> str | None:
         return self.attrs.get(name)
 
     async def query_selector(self, sel: str):
@@ -45,7 +45,7 @@ class FakeElement:
     async def set_input_files(self, path: str) -> None:
         self.uploaded = path
 
-    async def select_option(self, label: Optional[str] = None) -> None:
+    async def select_option(self, label: str | None = None) -> None:
         self.selected = label
 
 
@@ -67,7 +67,7 @@ class FakeNavCtx:
         self.value = _value()
         return self
 
-    async def __aexit__(self, *exc: Any) -> bool:
+    async def __aexit__(self, *exc: object) -> bool:
         return False
 
 
@@ -77,9 +77,9 @@ class FakePage:
     def __init__(
         self,
         url: str = "",
-        selectors: Optional[dict] = None,
+        selectors: dict | None = None,
         contents: str = "",
-        raise_on_goto: Optional[Exception] = None,
+        raise_on_goto: Exception | None = None,
         nav_url: str = "",
     ):
         self.url = url
@@ -133,7 +133,7 @@ class FakePage:
     async def close(self) -> None:
         self.closed = True
 
-    def expect_navigation(self, timeout: Optional[int] = None) -> FakeNavCtx:
+    def expect_navigation(self, timeout: int | None = None) -> FakeNavCtx:
         return FakeNavCtx(self._nav_url)
 
 
@@ -154,7 +154,7 @@ class ClickNavPage(FakePage):
 class FakeContext:
     """Fake Playwright BrowserContext."""
 
-    def __init__(self, pages_to_return: Optional[list] = None, cookies: Optional[list] = None):
+    def __init__(self, pages_to_return: list | None = None, cookies: list | None = None):
         self._pages_queue = list(pages_to_return or [])
         self._cookies = list(cookies or [])
 
@@ -185,17 +185,17 @@ class FakeResponse:
 class FakeAsyncClient:
     """Fake httpx.AsyncClient, used as an async context manager."""
 
-    def __init__(self, response: Optional[FakeResponse] = None, raise_exc: Optional[Exception] = None):
+    def __init__(self, response: FakeResponse | None = None, raise_exc: Exception | None = None):
         self._response = response
         self._raise = raise_exc
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "FakeAsyncClient":
+    def __call__(self, *args: Any, **kwargs: Any) -> FakeAsyncClient:
         return self
 
-    async def __aenter__(self) -> "FakeAsyncClient":
+    async def __aenter__(self) -> FakeAsyncClient:
         return self
 
-    async def __aexit__(self, *exc: Any) -> bool:
+    async def __aexit__(self, *exc: object) -> bool:
         return False
 
     async def get(self, *args: Any, **kwargs: Any) -> FakeResponse:

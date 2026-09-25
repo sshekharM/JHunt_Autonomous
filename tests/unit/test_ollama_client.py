@@ -4,7 +4,7 @@ Characterization tests for app.llm.ollama_client.
 No real network calls -- httpx.AsyncClient is replaced with a fake that
 records the request it was given and returns a canned response.
 """
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -13,7 +13,7 @@ from app.llm import ollama_client
 
 
 class _FakeResponse:
-    def __init__(self, json_data: Any, raise_exc: Optional[Exception] = None):
+    def __init__(self, json_data: Any, raise_exc: Exception | None = None):
         self._json = json_data
         self._raise = raise_exc
 
@@ -26,7 +26,7 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    def __init__(self, response: _FakeResponse, timeout: Optional[float] = None):
+    def __init__(self, response: _FakeResponse, timeout: float | None = None):
         self.response = response
         self.timeout = timeout
         self.calls: list[dict] = []
@@ -38,7 +38,7 @@ class _FakeAsyncClient:
     async def __aenter__(self) -> "_FakeAsyncClient":
         return self
 
-    async def __aexit__(self, *exc: Any) -> bool:
+    async def __aexit__(self, *exc: object) -> bool:
         return False
 
     async def post(self, url: str, json: dict) -> _FakeResponse:

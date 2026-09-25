@@ -13,7 +13,6 @@ import pytest
 
 from app.ml import matcher
 
-
 _FAKE_EMBED_DIM = 4
 _FAKE_SKILL_AXIS = {"python": 0, "go": 1, "java": 2, "kubernetes": 3}
 

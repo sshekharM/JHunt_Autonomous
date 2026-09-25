@@ -12,7 +12,6 @@ import pytest
 from app.tenant_models.application import ApplicationStatus
 from app.tenant_models.ml_feedback import OutcomeSignal
 
-
 # ---------------------------------------------------------------------------
 # check_all_application_statuses
 # ---------------------------------------------------------------------------
@@ -29,7 +28,10 @@ def _users_factory(users):
 
 
 def test_dispatches_check_task_per_user():
-    from app.tasks.status_check import check_all_application_statuses, check_user_application_statuses
+    from app.tasks.status_check import (
+        check_all_application_statuses,
+        check_user_application_statuses,
+    )
 
     user = MagicMock(id="u1", schema_name="u_abc")
     factory = _users_factory([user])
@@ -45,7 +47,10 @@ def test_dispatches_check_task_per_user():
 def test_dispatch_query_filters_active_onboarded_users():
     """Pin the WHERE clause itself (not just the mocked result) so a mutant
     flipping is_active/onboarding_complete to != or False is caught."""
-    from app.tasks.status_check import check_all_application_statuses, check_user_application_statuses
+    from app.tasks.status_check import (
+        check_all_application_statuses,
+        check_user_application_statuses,
+    )
 
     factory = _users_factory([])
     with patch("app.tasks.status_check.AsyncSessionLocal", factory), patch.object(

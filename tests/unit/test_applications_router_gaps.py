@@ -93,7 +93,7 @@ async def test_list_applications_rejects_unknown_status():
 
 
 async def test_list_applications_filters_by_status_and_portal():
-    db = _RecordingTenantDB(results=[SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))])
+    db = _RecordingTenantDB(results=[SimpleNamespace(scalars=lambda: SimpleNamespace(all=list))])
 
     with patch.object(applications, "get_tenant_db", _tenant_gen(db)):
         await applications.list_applications(
@@ -149,7 +149,7 @@ async def test_get_application_history_filters_by_application_id():
     row = _app_row()
     db = _RecordingTenantDB(results=[
         SimpleNamespace(scalar_one_or_none=lambda: row),
-        SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+        SimpleNamespace(scalars=lambda: SimpleNamespace(all=list)),
     ])
 
     with patch.object(applications, "get_tenant_db", _tenant_gen(db)):

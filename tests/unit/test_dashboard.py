@@ -36,11 +36,11 @@ def _tenant_gen(db):
 
 def _empty_results():
     return [
-        SimpleNamespace(fetchall=lambda: []),           # stats
+        SimpleNamespace(fetchall=list),           # stats
         SimpleNamespace(scalar=lambda: None),            # new matches
         SimpleNamespace(first=lambda: None),              # profile
-        SimpleNamespace(fetchall=lambda: []),             # recent applications
-        SimpleNamespace(fetchall=lambda: []),             # missing info
+        SimpleNamespace(fetchall=list),             # recent applications
+        SimpleNamespace(fetchall=list),             # missing info
     ]
 
 

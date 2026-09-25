@@ -9,7 +9,17 @@ behind.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum as SAEnum, Float, Integer, LargeBinary, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+)
+from sqlalchemy import Enum as SAEnum
 
 from app.tenant_models.application import (
     ApplicationFailureReason,
