@@ -44,6 +44,19 @@ async def test_get_all_active_skills_uses_cache_when_present():
 
 
 @pytest.mark.asyncio
+async def test_get_all_active_skills_defaults_to_using_cache():
+    """use_cache defaults to True; pin the default so a mutant flipping it
+    to False (which would force a DB query here) is caught."""
+    taxonomy_service._skill_cache = ["Python"]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=AssertionError("should not query DB"))
+
+    skills = await taxonomy_service.get_all_active_skills(db)
+
+    assert skills == ["Python"]
+
+
+@pytest.mark.asyncio
 async def test_get_all_active_skills_bypasses_cache_when_disabled():
     taxonomy_service._skill_cache = ["Stale"]
     db = _db_with_rows([("Python",), ("SQL",)])

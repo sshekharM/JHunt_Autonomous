@@ -91,6 +91,19 @@ async def test_cache_hit_returns_saved_answer_without_llm_call():
     db.commit.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_cache_lookup_filters_by_portal_and_fingerprint():
+    """Pin the WHERE clause so a mutant flipping either == to != is caught."""
+    db = _db_returning(None)
+    with patch("app.services.screening_service.llm_router.generate", new=AsyncMock(return_value="x")):
+        await answer_screening_question("Work permit?", "linkedin", {}, "gpt-4", db)
+
+    stmt = db.execute.call_args[0][0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "screening_answers.portal = 'linkedin'" in compiled
+    assert f"screening_answers.question_fingerprint = '{_fingerprint('Work permit?')}'" in compiled
+
+
 async def _run_cache_miss():
     db = _db_returning(None)
     with patch(
@@ -144,3 +157,6 @@ async def test_get_saved_answers_keys_by_question_text():
     answers = await get_saved_answers("linkedin", db)
 
     assert answers == {"Q1": "A1", "Q2": "A2"}
+    stmt = db.execute.call_args[0][0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "screening_answers.portal = 'linkedin'" in compiled

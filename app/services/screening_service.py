@@ -3,6 +3,7 @@ Auto-answer portal screening questions.
 Strategy: exact DB lookup first; LLM fallback for unknowns; cache new answers.
 """
 import hashlib
+
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

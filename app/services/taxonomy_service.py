@@ -3,20 +3,20 @@ Taxonomy service — skill lookup backed by the shared skill_taxonomy table.
 Seeds from data/taxonomy/it_skills.json on first run if the table is empty.
 """
 import json
-import os
 from pathlib import Path
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from app.models.skill_taxonomy import SkillTaxonomy, TaxonomyStatus, TaxonomySource
-from app.security.audit_log import audit
+
 import structlog
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.skill_taxonomy import SkillTaxonomy, TaxonomySource, TaxonomyStatus
+from app.security.audit_log import audit
 
 logger = structlog.get_logger("services.taxonomy_service")
 
 _SEED_FILE = Path(__file__).parent.parent.parent / "data" / "taxonomy" / "it_skills.json"
 
-_skill_cache: Optional[list[str]] = None
+_skill_cache: list[str] | None = None
 
 
 async def get_all_active_skills(db: AsyncSession, use_cache: bool = True) -> list[str]:
@@ -90,7 +90,7 @@ async def seed_from_file(db: AsyncSession) -> list[str]:
     return skills_added
 
 
-async def lookup_skill(skill_name: str, db: AsyncSession) -> Optional[SkillTaxonomy]:
+async def lookup_skill(skill_name: str, db: AsyncSession) -> SkillTaxonomy | None:
     """Exact-match lookup by skill_name (case-insensitive)."""
     result = await db.execute(
         select(SkillTaxonomy).where(
@@ -105,11 +105,11 @@ async def add_skill(
     category: str,
     source: TaxonomySource,
     db: AsyncSession,
-    subcategory: Optional[str] = None,
-    description: Optional[str] = None,
-    esco_uri: Optional[str] = None,
-    onet_code: Optional[str] = None,
-    auto_suggested_category: Optional[str] = None,
+    subcategory: str | None = None,
+    description: str | None = None,
+    esco_uri: str | None = None,
+    onet_code: str | None = None,
+    auto_suggested_category: str | None = None,
     status: TaxonomyStatus = TaxonomyStatus.active,
 ) -> SkillTaxonomy:
     """

@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from app.database import AsyncSessionLocal, get_tenant_db
 from app.tasks.celery_app import celery_app
