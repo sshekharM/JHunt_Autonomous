@@ -23,13 +23,11 @@ MIN_FEEDBACK_SAMPLES = 5
 
 
 async def _retrain_for_user(user_id: str, schema_name: str) -> dict:
-    from app.database import AsyncSessionLocal
+    from app.database import tenant_session
     from app.tenant_models.ml_feedback import MLFeedback, OutcomeSignal
     from sqlalchemy import select, text, func
 
-    async with AsyncSessionLocal() as db:
-        await db.execute(text(f'SET search_path TO "{schema_name}", public'))
-
+    async with tenant_session(schema_name) as db:
         result = await db.execute(
             select(
                 MLFeedback.portal,
@@ -57,9 +55,7 @@ async def _retrain_for_user(user_id: str, schema_name: str) -> dict:
 
     adjustments_applied = {}
 
-    async with AsyncSessionLocal() as db:
-        await db.execute(text(f'SET search_path TO "{schema_name}", public'))
-
+    async with tenant_session(schema_name) as db:
         for portal, stats in portal_stats.items():
             total = stats["total"]
             if total < MIN_FEEDBACK_SAMPLES:
@@ -92,7 +88,7 @@ async def _retrain_for_user(user_id: str, schema_name: str) -> dict:
             await db.execute(text("DELETE FROM skill_match_cache"))
             await db.commit()
         except Exception:
-            pass
+            logger.warning("ml_retrain.cache_invalidation_failed", user_id=user_id, exc_info=True)
 
     audit(
         "ml.retrained",

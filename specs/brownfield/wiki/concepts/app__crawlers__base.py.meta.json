@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/crawlers/base.py",
+  "member_paths": [
+    "app/crawlers/base.py"
+  ],
+  "content_hashes": {
+    "app/crawlers/base.py": "a393cf8657cb6478"
+  },
+  "content_hash": "f41aed1527f74c56",
+  "stale": false
+}

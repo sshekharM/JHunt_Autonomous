@@ -1,0 +1,21 @@
+# Semgrep's built-in defaults (a .semgrepignore file replaces them, so they are
+# repeated here).
+node_modules/
+build/
+dist/
+vendor/
+.env/
+.venv/
+.tox/
+*.min.js
+.npm/
+.yarn/
+test/
+tests/
+*_test.go
+.semgrep
+.semgrep_logs/
+
+# Claude Harness Engine tooling (hooks, scripts, templates). Developer-side
+# automation that never ships in the app image; not part of the attack surface.
+.claude/

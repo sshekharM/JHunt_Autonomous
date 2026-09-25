@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/config.py",
+  "member_paths": [
+    "app/config.py"
+  ],
+  "content_hashes": {
+    "app/config.py": "c9efd2fd545da6bc"
+  },
+  "content_hash": "5a055d29bfe06671",
+  "stale": false
+}

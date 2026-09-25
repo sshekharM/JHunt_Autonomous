@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/security/audit_log.py",
+  "member_paths": [
+    "app/security/audit_log.py"
+  ],
+  "content_hashes": {
+    "app/security/audit_log.py": "1010a9f277b5657e"
+  },
+  "content_hash": "b4bc0bed589f64af",
+  "stale": false
+}

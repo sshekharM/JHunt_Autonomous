@@ -1,0 +1,316 @@
+{
+  "schema_version": 1,
+  "built_at": "2026-09-23T06:37:45.807Z",
+  "months": 6,
+  "commits_scanned": 9,
+  "file_count": 79,
+  "edge_count": 6,
+  "neighbors": {
+    "app/services/resume_service.py": [
+      {
+        "path": "tests/unit/test_application_service.py",
+        "count": 2
+      },
+      {
+        "path": "tests/unit/test_resume_service.py",
+        "count": 2
+      }
+    ],
+    "tests/unit/test_application_service.py": [
+      {
+        "path": "app/services/resume_service.py",
+        "count": 2
+      },
+      {
+        "path": "tests/unit/test_resume_service.py",
+        "count": 2
+      }
+    ],
+    "tests/unit/test_resume_service.py": [
+      {
+        "path": "app/services/resume_service.py",
+        "count": 2
+      },
+      {
+        "path": "tests/unit/test_application_service.py",
+        "count": 2
+      }
+    ],
+    "app/ml/matcher.py": [
+      {
+        "path": "app/ml/taxonomy_discovery.py",
+        "count": 2
+      }
+    ],
+    "app/ml/taxonomy_discovery.py": [
+      {
+        "path": "app/ml/matcher.py",
+        "count": 2
+      }
+    ],
+    "app/tasks/crawl_jobs.py": [
+      {
+        "path": "app/tasks/ml_retrain.py",
+        "count": 2
+      }
+    ],
+    "app/tasks/ml_retrain.py": [
+      {
+        "path": "app/tasks/crawl_jobs.py",
+        "count": 2
+      }
+    ],
+    "app/tasks/auto_apply.py": [
+      {
+        "path": "app/tasks/status_check.py",
+        "count": 2
+      }
+    ],
+    "app/tasks/status_check.py": [
+      {
+        "path": "app/tasks/auto_apply.py",
+        "count": 2
+      }
+    ]
+  },
+  "edges": [
+    {
+      "source": "app/ml/matcher.py",
+      "target": "app/ml/taxonomy_discovery.py",
+      "kind": "cochange",
+      "count": 2
+    },
+    {
+      "source": "app/services/resume_service.py",
+      "target": "tests/unit/test_application_service.py",
+      "kind": "cochange",
+      "count": 2
+    },
+    {
+      "source": "app/services/resume_service.py",
+      "target": "tests/unit/test_resume_service.py",
+      "kind": "cochange",
+      "count": 2
+    },
+    {
+      "source": "app/tasks/auto_apply.py",
+      "target": "app/tasks/status_check.py",
+      "kind": "cochange",
+      "count": 2
+    },
+    {
+      "source": "app/tasks/crawl_jobs.py",
+      "target": "app/tasks/ml_retrain.py",
+      "kind": "cochange",
+      "count": 2
+    },
+    {
+      "source": "tests/unit/test_application_service.py",
+      "target": "tests/unit/test_resume_service.py",
+      "kind": "cochange",
+      "count": 2
+    }
+  ],
+  "hotspots": [
+    {
+      "path": "app/services/resume_service.py",
+      "commits": 3
+    },
+    {
+      "path": "tests/unit/test_application_service.py",
+      "commits": 2
+    },
+    {
+      "path": "tests/unit/test_resume_service.py",
+      "commits": 2
+    },
+    {
+      "path": "app/main.py",
+      "commits": 2
+    },
+    {
+      "path": "app/tasks/celery_app.py",
+      "commits": 2
+    },
+    {
+      "path": "app/config.py",
+      "commits": 2
+    },
+    {
+      "path": "app/ml/matcher.py",
+      "commits": 2
+    },
+    {
+      "path": "app/ml/taxonomy_discovery.py",
+      "commits": 2
+    },
+    {
+      "path": "app/tasks/crawl_jobs.py",
+      "commits": 2
+    },
+    {
+      "path": "app/tasks/ml_retrain.py",
+      "commits": 2
+    },
+    {
+      "path": "app/crawlers/session_manager.py",
+      "commits": 2
+    },
+    {
+      "path": "app/tasks/auto_apply.py",
+      "commits": 2
+    },
+    {
+      "path": "app/tasks/status_check.py",
+      "commits": 2
+    },
+    {
+      "path": "tests/validation/__init__.py",
+      "commits": 1
+    },
+    {
+      "path": "tests/validation/test_full_validation.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/assets/create_icon.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/build_exe.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/core/__init__.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/core/autostart.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/core/docker_runner.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/core/env_writer.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/core/prereq_checker.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/__init__.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/admin.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/base.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/database.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/install.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/install_dir.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/llm.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/notifications.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/oauth.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/portals.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/prerequisites.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/pages/welcome.py",
+      "commits": 1
+    },
+    {
+      "path": "installer/wizard.py",
+      "commits": 1
+    },
+    {
+      "path": "tests/unit/test_totp.py",
+      "commits": 1
+    },
+    {
+      "path": "app/billing/gates.py",
+      "commits": 1
+    },
+    {
+      "path": "app/crawlers/company_pages/__init__.py",
+      "commits": 1
+    },
+    {
+      "path": "app/crawlers/company_pages/base_company.py",
+      "commits": 1
+    },
+    {
+      "path": "app/crawlers/monster.py",
+      "commits": 1
+    },
+    {
+      "path": "app/crawlers/shine.py",
+      "commits": 1
+    },
+    {
+      "path": "tests/unit/test_billing_gates.py",
+      "commits": 1
+    },
+    {
+      "path": "tests/unit/test_soft_signals.py",
+      "commits": 1
+    },
+    {
+      "path": "alembic/versions/0002_phase4_columns.py",
+      "commits": 1
+    },
+    {
+      "path": "app/notifications/discord_bot.py",
+      "commits": 1
+    },
+    {
+      "path": "app/notifications/email_client.py",
+      "commits": 1
+    },
+    {
+      "path": "app/notifications/telegram_bot.py",
+      "commits": 1
+    },
+    {
+      "path": "app/routers/applications.py",
+      "commits": 1
+    },
+    {
+      "path": "app/routers/notifications.py",
+      "commits": 1
+    },
+    {
+      "path": "app/services/notification_service.py",
+      "commits": 1
+    }
+  ]
+}

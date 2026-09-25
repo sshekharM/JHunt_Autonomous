@@ -4,20 +4,12 @@ Each invocation uses the system portal account, not any user's personal session.
 """
 import asyncio
 from typing import Optional
+from app.crawlers.registry import crawler_class_for, is_supported
 from app.tasks.celery_app import celery_app
 from app.security.audit_log import audit
 import structlog
 
 logger = structlog.get_logger("tasks.crawl_jobs")
-
-_CRAWLER_MAP = {
-    "naukri": ("app.crawlers.naukri", "NaukriCrawler"),
-    "linkedin": ("app.crawlers.linkedin", "LinkedInCrawler"),
-    "glassdoor": ("app.crawlers.glassdoor", "GlassdoorCrawler"),
-    "indeed": ("app.crawlers.indeed", "IndeedCrawler"),
-    "monster": ("app.crawlers.monster", "MonsterCrawler"),
-    "shine": ("app.crawlers.shine", "ShineCrawler"),
-}
 
 # Keyword sets that drive each crawl run; taxonomy_service provides the full list
 # but we use a focused set for each portal call to keep runtimes bounded.
@@ -35,11 +27,9 @@ _DEFAULT_KEYWORD_GROUPS = [
 ]
 
 
-def _import_crawler(portal_name: str):
-    import importlib
-    module_path, class_name = _CRAWLER_MAP[portal_name]
-    module = importlib.import_module(module_path)
-    return getattr(module, class_name)
+def is_known_portal(portal_name: str) -> bool:
+    """True if the shared crawler registry has a crawler for this portal."""
+    return is_supported(portal_name)
 
 
 async def _run_crawl(portal_name: str) -> dict:
@@ -51,7 +41,7 @@ async def _run_crawl(portal_name: str) -> dict:
     from sqlalchemy import select, text
     from datetime import datetime, timezone
 
-    CrawlerClass = _import_crawler(portal_name)
+    CrawlerClass = crawler_class_for(portal_name)
     crawler = CrawlerClass()
 
     async with AsyncSessionLocal() as db:
@@ -167,7 +157,8 @@ def crawl_portal(self, portal_name: str):
     Crawl a specific portal for Indian IT jobs using the system account.
     Runs asynchronously inside a new event loop — Celery workers are sync.
     """
-    if portal_name not in _CRAWLER_MAP:
+    portal_name = portal_name.lower()
+    if not is_known_portal(portal_name):
         logger.error("crawl_portal.unknown_portal", portal=portal_name)
         return {"error": f"Unknown portal: {portal_name}"}
 

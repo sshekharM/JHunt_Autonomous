@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/tenant_models/profile.py",
+  "member_paths": [
+    "app/tenant_models/profile.py"
+  ],
+  "content_hashes": {
+    "app/tenant_models/profile.py": "3a772f30264a46a5"
+  },
+  "content_hash": "4bb3c35f6e8526a2",
+  "stale": false
+}

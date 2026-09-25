@@ -1,0 +1,11 @@
+{
+  "cluster_id": "app/services/job_service.py",
+  "member_paths": [
+    "app/services/job_service.py"
+  ],
+  "content_hashes": {
+    "app/services/job_service.py": "85dde9d0b4baf5ff"
+  },
+  "content_hash": "bd24284a35daae34",
+  "stale": false
+}

@@ -1,31 +1,33 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-*.egg
+# Environment
+.env
+.env.local
+.env.production
 
-# Virtual environments
+# Dependencies
+node_modules/
 .venv/
 venv/
-env/
 
-# Environment variables
-.env
-.env.*
-!.env.example
+# Build artifacts
+dist/
+build/
+.next/
+out/
+*.egg-info/
 
-# pytest
+# Python caches
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
 .pytest_cache/
+
+# Test output
 .coverage
 htmlcov/
-
-# mypy
-.mypy_cache/
+playwright-report/
+test-results/
+coverage/
 
 # IDE
 .idea/
@@ -33,15 +35,49 @@ htmlcov/
 *.swp
 *.swo
 
-# OS
+# Generated / large files Claude should skip
+*.min.js
+*.min.css
+*.map
+*.lock
+package-lock.json
+
+# Harness state — .claude/state/ is a tracked snapshot: ratchet baselines
+# (agent-readiness/coupling/coverage/cycle), learned-rules.md, process-rules.md,
+# failures.md, iteration-log.md stay committed. Only runtime churn is ignored
+# below — caches, indexes, logs, counters, and *.jsonl ledgers. All scoped to
+# .claude/state/ so real project data (e.g. a data/*.jsonl fixture) is never hit.
+.claude/runs/
+.claude/state/archive/
+.claude/state/context-cache/
+.claude/state/tool-output/
+.claude/state/nav-index/
+.claude/state/*.jsonl
+.claude/state/*.log
+.claude/state/*.offset
+.claude/state/lane-router-last.txt
+.claude/state/last-drift-scan.txt
+.claude/state/review-block-count
+.claude/state/auto-continue-count
+.claude/state/auto-continue-progress
+.claude/state/inflight-agents.json
+.claude/state/human-codebase.json
+.claude/state/nav-graph-index.json
+.claude/state/context-pack-last.json
+.claude/state/nav-telemetry-summary.json
+.claude/tdd-guard/
+.claude/claude-security-guidance.local.md
+
+# --- Restored from pre-scaffold .gitignore ---
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+env/
+.env.*
+!.env.example
 .DS_Store
 Thumbs.db
-
-# Docker
 *.log
-
-# MinIO / local storage
 data/minio/
-
-# Alembic compiled
-*.pyc

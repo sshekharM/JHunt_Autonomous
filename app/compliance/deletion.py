@@ -5,6 +5,7 @@ from enum import Enum
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, delete
+from app.database import validate_schema_name
 from app.models.user import User
 from app.security.audit_log import audit
 
@@ -34,8 +35,8 @@ async def execute_deletion(
 
 async def _hard_delete(user: User, db: AsyncSession) -> dict:
     """Drop user schema, delete user row. Irreversible."""
-    schema = user.schema_name
-    await db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+    schema = validate_schema_name(user.schema_name)
+    await db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))  # nosemgrep -- validated above
     await db.delete(user)
     await db.commit()
     audit("user.hard_deleted", user_id=user.id, resource="user_data")
@@ -74,10 +75,10 @@ async def _anonymise(user: User, db: AsyncSession) -> dict:
     What is removed:
       - Name, email, phone, resume, work history, portal sessions, OAuth identity
     """
-    schema = user.schema_name
+    schema = validate_schema_name(user.schema_name)
     # Wipe PII columns in user's schema
     for table in ("profile", "master_resume", "tailored_resumes", "portal_sessions"):
-        await db.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE'))
+        await db.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE'))  # nosemgrep -- validated schema, literal tables
 
     # Nullify PII on user row
     user.email_encrypted = b""

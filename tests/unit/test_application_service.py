@@ -193,3 +193,120 @@ async def test_queue_for_hitl_creates_pending_record():
     job_apps = [o for o in added_objects if hasattr(o, "status")]
     assert any(a.status == ApplicationStatus.pending_hitl for a in job_apps)
     tenant_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_queue_for_hitl_logs_notify_dispatch_failure():
+    """A failed notification dispatch is logged, not swallowed, and still queues."""
+    tenant_db = AsyncMock(spec=AsyncSession)
+    tenant_db.add = MagicMock()
+    tenant_db.flush = AsyncMock()
+    tenant_db.commit = AsyncMock()
+
+    from app.services.application_service import queue_for_hitl
+
+    with patch("app.tasks.notify.dispatch_activity_digest") as dispatch, \
+            patch("app.services.application_service.logger") as log:
+        dispatch.delay.side_effect = RuntimeError("broker down")
+        await queue_for_hitl(
+            user_id="user-1",
+            job_id="job-1",
+            match_score=0.82,
+            portal="naukri",
+            portal_job_id="naukri-123",
+            job_title="Senior Python Developer",
+            company="TechCorp India",
+            tenant_db=tenant_db,
+        )
+
+    tenant_db.commit.assert_awaited_once()
+    log.warning.assert_called_once()
+    assert log.warning.call_args.args[0] == "application.notify_dispatch_failed"
+    assert log.warning.call_args.kwargs.get("user_id") == "user-1"
+
+
+# ---------------------------------------------------------------------------
+# transition_status — applied_at stamping and lookup query
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_transition_to_applied_stamps_applied_at():
+    app_obj = _make_app(ApplicationStatus.applying)
+    from app.services.application_service import transition_status
+    await transition_status("app-001", ApplicationStatus.applied, _make_db_with_app(app_obj))
+    assert isinstance(app_obj.applied_at, datetime)
+
+
+@pytest.mark.asyncio
+async def test_transition_to_applied_keeps_existing_applied_at():
+    earlier = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    app_obj = _make_app(ApplicationStatus.applying, applied_at=earlier)
+    from app.services.application_service import transition_status
+    await transition_status("app-001", ApplicationStatus.applied, _make_db_with_app(app_obj))
+    assert app_obj.applied_at == earlier
+
+
+@pytest.mark.asyncio
+async def test_transition_to_other_status_leaves_applied_at_unset():
+    app_obj = _make_app(ApplicationStatus.applied)
+    from app.services.application_service import transition_status
+    await transition_status("app-001", ApplicationStatus.viewed, _make_db_with_app(app_obj))
+    assert app_obj.applied_at is None
+
+
+def _where_sql(db) -> str:
+    stmt = db.execute.call_args.args[0]
+    return str(stmt.whereclause)
+
+
+@pytest.mark.asyncio
+async def test_transition_looks_up_application_by_id_equality():
+    db = _make_db_with_app(_make_app(ApplicationStatus.applying))
+    from app.services.application_service import transition_status
+    await transition_status("app-001", ApplicationStatus.applied, db)
+    sql = _where_sql(db)
+    assert "applications.id = " in sql and "!=" not in sql
+
+
+# ---------------------------------------------------------------------------
+# apply_to_job — failure mapping and job lookup
+# ---------------------------------------------------------------------------
+
+def _job_record():
+    job = MagicMock()
+    job.portal, job.portal_job_id, job.match_score = "naukri", "nk-1", 0.8
+    job.title, job.company, job.location, job.job_url = "Dev", "Acme", "Pune", "https://x"
+    return job
+
+
+async def _apply(receipt, db, job_record=None):
+    from app.services import application_service as svc
+    crawler = MagicMock()
+    crawler.apply = AsyncMock(return_value=receipt)
+    with patch.object(svc, "_crawler_for_portal", return_value=crawler), \
+            patch.object(svc, "get_context", AsyncMock()), \
+            patch.object(svc, "audit"), patch.object(svc, "record_outcome", AsyncMock()):
+        await svc.apply_to_job("user-1", "job-1", "u_x", db, AsyncMock(), "/r.pdf", "cl", job_record)
+    return [o for o in db.add.call_args_list if hasattr(o.args[0], "failure_reason")][0].args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason,status,failure", [
+    ("missing_info", "failed_missing_info", "missing_profile_info"),
+    ("captcha", "failed_portal_error", "unknown"),
+])
+async def test_apply_failure_maps_reason_to_status(reason, status, failure):
+    from app.crawlers.base import ApplicationReceipt
+    db = _make_db_with_app(None)
+    app = await _apply(ApplicationReceipt(success=False, failure_reason=reason), db, _job_record())
+    assert app.status.value == status
+    assert app.failure_reason.value == failure
+
+
+@pytest.mark.asyncio
+async def test_apply_looks_up_matched_job_by_id_equality():
+    from app.crawlers.base import ApplicationReceipt
+    db = _make_db_with_app(_job_record())
+    await _apply(ApplicationReceipt(success=True, portal_application_id="p-1"), db)
+    sql = _where_sql(db)
+    assert "jobs.id = " in sql and "!=" not in sql

@@ -1,6 +1,7 @@
 # Web framework
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
+itsdangerous==2.2.0  # required by starlette SessionMiddleware (app/main.py)
 
 # Database
 sqlalchemy[asyncio]==2.0.30
@@ -38,6 +39,8 @@ httpx==0.27.0
 
 # Crawler
 playwright==1.44.0
+beautifulsoup4==4.12.3
+lxml==5.2.2
 
 # PDF
 pdfplumber==0.11.0
