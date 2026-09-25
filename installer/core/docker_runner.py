@@ -1,12 +1,11 @@
 """Docker compose operations for jH_ANS installer."""
 import os
-import sys
 import shutil
 import subprocess
-import threading
+import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 # Source docker-compose files relative to this installer
 _INSTALLER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

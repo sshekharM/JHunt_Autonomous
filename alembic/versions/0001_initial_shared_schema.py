@@ -7,9 +7,10 @@ Revision ID: 0001_initial_shared_schema
 Revises: (none)
 Create Date: 2026-07-12
 """
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "0001_initial_shared_schema"
 down_revision = None

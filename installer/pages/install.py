@@ -1,11 +1,12 @@
 """Final install page: summary → progress → completion."""
 import sys
 import threading
-import webbrowser
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+import webbrowser
+from tkinter import ttk
+
+from ..core import autostart, docker_runner, env_writer
 from .base import WizardPage
-from ..core import env_writer, docker_runner, autostart
 
 DASHBOARD_URL = "http://localhost:8000"
 

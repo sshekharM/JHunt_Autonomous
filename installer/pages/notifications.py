@@ -1,7 +1,8 @@
 """Notifications configuration page."""
 import tkinter as tk
-from tkinter import ttk
 import webbrowser
+from tkinter import ttk
+
 from .base import WizardPage
 
 

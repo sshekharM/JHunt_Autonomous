@@ -10,7 +10,6 @@ tenant schema, passed via config.attributes:
     schema      – validated tenant schema name (holds alembic_version)
 """
 from alembic import context
-
 from app.tenant_migrations import tenant_metadata
 
 if context.is_offline_mode():

@@ -13,17 +13,17 @@ Connects with the app's asyncpg URL (psycopg2 is not a dependency).
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic import context
+from app.compliance.dpdpa import ConsentRecord  # noqa: F401
 from app.config import settings
 
 # Shared-schema models
 from app.database import Base
-from app.models import user, admin, portal_account, job, skill_taxonomy  # noqa: F401
-from app.compliance.dpdpa import ConsentRecord  # noqa: F401
+from app.models import admin, job, portal_account, skill_taxonomy, user  # noqa: F401
 
 alembic_config = context.config
 

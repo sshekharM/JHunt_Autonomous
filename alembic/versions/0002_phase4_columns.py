@@ -9,8 +9,9 @@ Notes:
   - preferences.discord_channel_id is a tenant-schema column; it is created by
     the tenant chain's baseline (migrations/tenant/versions/t0001), not here.
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0002"
 down_revision = "0001_initial_shared_schema"
