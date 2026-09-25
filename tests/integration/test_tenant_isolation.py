@@ -26,16 +26,8 @@ def _new_schema() -> str:
 
 
 async def _create_tenant(schema: str) -> None:
-    from app.database import engine, provision_user_schema, search_path_sql
-    from app.tenant_models.profile import TenantBase
-    import app.tenant_models.application  # noqa: F401  (register tables on TenantBase)
-
-    await provision_user_schema(schema)
-    # provision_user_schema does not create tenant tables yet (see risk-map R2),
-    # so build them here the way tenant migrations would.
-    async with engine.begin() as conn:
-        await conn.execute(search_path_sql(schema))
-        await conn.run_sync(TenantBase.metadata.create_all)
+    from app.database import provision_user_schema
+    await provision_user_schema(schema)  # schema + tenant tables, as at onboarding
 
 
 @pytest.fixture

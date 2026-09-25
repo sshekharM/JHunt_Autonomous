@@ -97,7 +97,11 @@ async def get_tenant_db(schema_name: str):
 
 
 async def provision_user_schema(schema_name: str) -> None:
-    """Create a new PostgreSQL schema for a user and run tenant migrations."""
+    """Create a user's schema and migrate it to the tenant head, in one transaction
+    (a failed migration leaves no half-built schema behind). Safe to re-run."""
+    from app.tenant_migrations import migrate_tenant_schema
+
     validate_schema_name(schema_name)
     async with engine.begin() as conn:
         await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))  # nosemgrep -- validated above
+        await migrate_tenant_schema(conn, schema_name)

@@ -61,6 +61,16 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Shared migrations round-trip (alembic/)
+        env:
+          APP_SECRET_KEY: ci-only-not-a-secret-32-bytes-xx
+          MINIO_SECRET_KEY: ci-only
+          GOOGLE_CLIENT_ID: ci-only
+          GOOGLE_CLIENT_SECRET: ci-only
+        run: |
+          export FERNET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+          alembic upgrade head
+          alembic downgrade base
       - name: Run integration tests
         run: pytest -q tests/integration
 
