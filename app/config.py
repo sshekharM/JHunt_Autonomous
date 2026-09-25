@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     # Security
     allowed_ips: str = "127.0.0.1"
     jwt_algorithm: str = "HS256"
-    jwt_expiry_hours: int = 8
+    jwt_expiry_hours: int = 4  # session length; also the access_token cookie's max-age
     totp_issuer: str = "jH_ANS"
     totp_max_failures: int = 5  # consecutive bad codes before lockout (CHG-006)
     totp_lockout_minutes: int = 15

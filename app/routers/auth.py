@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.config import settings
 from app.database import get_db, provision_user_schema
 from app.models.user import User, OAuthProvider
 from app.services.auth_service import (
@@ -116,7 +117,7 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=3600 * 8,
+        max_age=settings.jwt_expiry_hours * 3600,  # cookie and JWT expire together
     )
     audit("auth.login", user_id=user.id, details={"provider": provider})
     return response
@@ -208,7 +209,7 @@ async def verify_totp_code(
     response = JSONResponse({"ok": True, "redirect": "/onboarding" if not user.onboarding_complete else "/dashboard"})
     response.set_cookie(
         key="access_token", value=token_str, httponly=True,
-        secure=True, samesite="lax", max_age=3600 * 8,
+        secure=True, samesite="lax", max_age=settings.jwt_expiry_hours * 3600,
     )
     response.delete_cookie(
         PENDING_2FA_COOKIE, path=PENDING_2FA_PATH,
