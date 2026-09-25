@@ -1,24 +1,38 @@
-from datetime import datetime, timezone
-from typing import Optional
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse, JSONResponse
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from app.config import settings
-from app.database import get_db, provision_user_schema
-from app.models.user import User, OAuthProvider
-from app.services.auth_service import (
-    oauth, create_access_token, build_user_thumbprint,
-    create_pending_2fa_token, decode_pending_2fa_token, PENDING_2FA_TTL,
-)
-from app.security.encryption import decrypt, encrypt, sha256_hash
-from app.security.totp import generate_totp_secret, get_totp_uri, generate_qr_code_base64, matched_totp_step
-from app.services.totp_lockout import is_replayed_step, lock_seconds_left, record_failure, record_success
-from app.security.audit_log import audit
-from app.security.rate_limiter import limiter
-from app.dependencies import get_current_user
 import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.models.user import OAuthProvider, User
+from app.security.audit_log import audit
+from app.security.encryption import decrypt, encrypt, sha256_hash
+from app.security.rate_limiter import limiter
+from app.security.totp import (
+    generate_qr_code_base64,
+    generate_totp_secret,
+    get_totp_uri,
+    matched_totp_step,
+)
+from app.services.auth_service import (
+    PENDING_2FA_TTL,
+    create_access_token,
+    create_pending_2fa_token,
+    decode_pending_2fa_token,
+    oauth,
+)
+from app.services.totp_lockout import (
+    is_replayed_step,
+    lock_seconds_left,
+    record_failure,
+    record_success,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -143,7 +157,7 @@ def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONRespo
     return setup
 
 
-async def _pending_2fa_user(pending_2fa: Optional[str], db: AsyncSession) -> User:
+async def _pending_2fa_user(pending_2fa: str | None, db: AsyncSession) -> User:
     """User named by a valid pending_2fa cookie; a token for an already-verified user is spent."""
     user_id = decode_pending_2fa_token(pending_2fa)
     # FOR UPDATE: concurrent attempts for one account queue, so counters and steps stay exact;
@@ -196,7 +210,7 @@ class TotpVerifyRequest(BaseModel):
 async def verify_totp_code(
     request: Request,
     body: TotpVerifyRequest,
-    pending_2fa: Optional[str] = Cookie(default=None),
+    pending_2fa: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _pending_2fa_user(pending_2fa, db)

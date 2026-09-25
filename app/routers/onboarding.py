@@ -2,22 +2,32 @@
 9-step onboarding wizard.
 Each step is a PATCH endpoint; frontend POSTs step data sequentially.
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select, text
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
-from app.database import get_db, provision_user_schema, tenant_session
-from app.models.user import User
-from app.tenant_models.profile import UserProfile, UserPreferences, WFHPreference, LLMChoice, NotificationPlatform
-from app.tenant_models.skill import UserSkill
-from app.tenant_models.resume import MasterResume
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.compliance.consent_store import record_consent
-from app.security.encryption import encrypt, generate_thumbprint, schema_name_from_thumbprint
-from app.security.audit_log import audit
+from app.database import get_db, provision_user_schema, tenant_session
 from app.dependencies import get_current_user
+from app.models.user import User
+from app.security.audit_log import audit
+from app.security.encryption import (
+    encrypt,
+    generate_thumbprint,
+    schema_name_from_thumbprint,
+)
 from app.services.storage_service import upload_resume
-import uuid
+from app.tenant_models.profile import (
+    LLMChoice,
+    NotificationPlatform,
+    UserPreferences,
+    UserProfile,
+    WFHPreference,
+)
+from app.tenant_models.resume import MasterResume
+from app.tenant_models.skill import UserSkill
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 
@@ -35,14 +45,14 @@ class Step2ProfessionalData(BaseModel):
 
 
 class Step3ExperienceData(BaseModel):
-    work_history: List[dict]
-    education: List[dict]
+    work_history: list[dict]
+    education: list[dict]
 
 
 class Step4PreferencesData(BaseModel):
-    desired_roles: List[str]
-    preferred_locations: List[str]
-    salary_min_lpa: Optional[int] = None
+    desired_roles: list[str]
+    preferred_locations: list[str]
+    salary_min_lpa: int | None = None
     notice_period_days: int = 0
     wfh_preference: WFHPreference = WFHPreference.any
     match_threshold: float = 0.7
@@ -54,7 +64,7 @@ class Step4PreferencesData(BaseModel):
 
 
 class Step5SkillsData(BaseModel):
-    skills: List[dict]  # [{"skill_name": "Python", "proficiency": "expert", "years_used": 5}]
+    skills: list[dict]  # [{"skill_name": "Python", "proficiency": "expert", "years_used": 5}]
 
 
 class Step6LLMChoiceData(BaseModel):
@@ -64,8 +74,8 @@ class Step6LLMChoiceData(BaseModel):
 
 class Step7NotificationData(BaseModel):
     notification_platform: NotificationPlatform
-    telegram_chat_id: Optional[str] = None
-    discord_channel_id: Optional[str] = None
+    telegram_chat_id: str | None = None
+    discord_channel_id: str | None = None
 
 
 class Step9ConsentData(BaseModel):
