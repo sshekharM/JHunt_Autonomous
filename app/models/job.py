@@ -4,9 +4,11 @@ Stores all crawled jobs before they are matched to individual users.
 """
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Boolean, Text, UniqueConstraint
+
+from sqlalchemy import Boolean, DateTime, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database import Base
 
 

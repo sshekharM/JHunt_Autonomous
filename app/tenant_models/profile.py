@@ -3,19 +3,25 @@ Per-user schema models — all tables live in the user's private PostgreSQL sche
 These are NOT registered in the shared Base metadata; they are created via
 per-schema Alembic migrations.
 """
+import enum
 import uuid
 from datetime import datetime, timezone
+
 from sqlalchemy import (
-    String, Integer, Boolean, DateTime, LargeBinary,
-    Enum as SAEnum, ARRAY, JSON, Float, Text
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    LargeBinary,
+    String,
 )
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-import enum
 
 
 class TenantBase(DeclarativeBase):
     """Separate declarative base for per-user-schema models."""
-    pass
 
 
 class WFHPreference(str, enum.Enum):

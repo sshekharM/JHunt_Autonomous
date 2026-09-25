@@ -1,9 +1,12 @@
+import enum
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Enum as SAEnum, Text, UniqueConstraint
+
+from sqlalchemy import DateTime, String, Text, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database import Base
-import enum
 
 
 class TaxonomyStatus(str, enum.Enum):
