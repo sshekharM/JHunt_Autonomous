@@ -1,99 +1,114 @@
 {
   "gate": "code-review",
-  "reviewer": "instance-a",
+  "reviewer": "code-reviewer (fresh context, pass A)",
   "verdict": "PASS",
   "pass": true,
-  "range": "working tree (uncommitted) on fix/admin-ip-allowlist",
-  "story": "specs/stories/CHG-002-admin-ip-allowlist.md",
-  "summary": { "block": 0, "warn": 2, "info": 5 },
-  "verified": [
-    "AC1: 11 /api/admin APIRoutes, all 11 resolve require_server_ip in their dependant tree; 31 non-admin routes resolve none (the AC1 assertion is not vacuous).",
-    "AC2/AC3: require_server_ip is first in route.dependant.dependencies (before require_role.checker and get_db), so a disallowed IP gets 403 with no DB session opened; TestClient run returns 403 unauthenticated and 401 when the host is listed.",
-    "AC4/AC5: allowed_ip_list drops blank entries; require_server_ip denies on empty client host and empty allowlist. The prior fail-open ('' matching ['']) is closed.",
-    "pytest -q tests/unit/test_ip_allowlist.py: 12 passed (exit 0).",
-    "No other consumer of allowed_ip_list exists, so the parser change breaks no caller. ALLOWED_IPS is not runtime-mutable via /api/admin/config (only crawl_* fields), so no self-lockout path was added."
-  ],
+  "range": "fix/admin-ip-allowlist..HEAD",
+  "commits": ["aa9274d", "b02ef98", "7286234"],
+  "scope": "app/ and tests/ only (CHG-003 / R17, CHG-004 / R18)",
+  "tests_run": "python -m pytest tests/unit/test_auth.py tests/unit/test_auth_service.py tests/unit/test_dependencies.py tests/unit/test_notifications.py -q -> 72 passed, exit 0",
+  "summary": { "block": 0, "warn": 2, "info": 7 },
   "findings": [
     {
       "id": "CRA-001",
-      "level": "WARN",
       "severity": "WARN",
       "confidence": "medium",
-      "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 42,
-      "message": "The AC1 test asserts on FastAPI dependency-injection internals (route.dependant.dependencies, via the recursive _depends_on helper) rather than on observable behaviour. It proves the wiring exists, not that a disallowed caller is actually refused on each admin route; only /api/admin/ops/dashboard is exercised behaviourally. It is also the least stakeholder-readable test in the file ('depends on require_server_ip' is a code detail, not a requirement).",
-      "fix": "Keep the route enumeration, but assert behaviour: parametrize over the (method, path) pairs of every /api/admin APIRoute, call each with the default TestClient host absent from ALLOWED_IPS, and assert 403. Rename to test_every_admin_endpoint_refuses_an_unlisted_ip. (TestClient in starlette/fastapi 0.111 does not accept a client= kwarg, so keep using the 'testclient' host constant.)"
+      "axis": "behaviour",
+      "file": "app/routers/notifications.py",
+      "line": 49,
+      "message": "The keep-alive loop only exits on WebSocketDisconnect, but it never awaits websocket.receive(), which is the only place Starlette raises that exception. Under uvicorn 0.29 [standard] a real client disconnect surfaces from the send side (websockets ConnectionClosed), which suppress(WebSocketDisconnect) does not catch, so every disconnect escapes the handler and uvicorn logs an 'Exception in ASGI application' traceback. The new finally block still unregisters the socket, so the registry stays correct; the impact is log noise plus an untested exit path. The test proves it only because _disconnect_after_one_ping monkeypatches asyncio.sleep to raise WebSocketDisconnect, which cannot happen in production.",
+      "fix": "Widen the suppressed exception set on the loop (e.g. suppress(WebSocketDisconnect, ConnectionError, RuntimeError)) or drive the loop with a receive() task so the disconnect arrives as WebSocketDisconnect, and add one test that raises the send-side error instead of a synthetic asyncio.sleep failure."
     },
     {
       "id": "CRA-002",
-      "level": "WARN",
       "severity": "WARN",
-      "confidence": "medium",
+      "confidence": "high",
       "axis": "behaviour",
-      "file": "app/security/ip_allowlist.py",
-      "line": 24,
-      "message": "Exact string matching plus the shipped default ALLOWED_IPS=127.0.0.1 silently locks out local operators on a dual-stack bind: uvicorn reports '::1' or '::ffff:127.0.0.1' for loopback when listening on '::', and neither string equals '127.0.0.1'. Fail-closed is intended, but this specific form is a foreseeable false denial that the .env.example caveat (which covers only the Docker bridge and nginx cases) does not mention, and no test covers an IPv6 host.",
-      "fix": "Add one line to the .env.example Security block naming the IPv6 loopback forms ('::1', '::ffff:127.0.0.1') and advising listing them alongside 127.0.0.1; optionally add a test asserting an IPv6 host is denied unless listed. Do not add CIDR/normalisation logic - that is explicitly out of scope for CHG-002."
+      "file": "app/routers/auth.py",
+      "line": 158,
+      "message": "`code: str` is an unannotated scalar on a POST route, so FastAPI binds it as a query parameter. The one-time TOTP code therefore travels in the request line and lands in nginx/uvicorn access logs, proxy logs and browser history. The diff rewrote this signature (removing user_id) and left `code` where it was. CHG-003 records this as a deferred follow-up, so it does not block, but it is the last remaining transport weakness on the path this story hardens.",
+      "fix": "Move `code` into a Pydantic request body model (e.g. `body: TotpVerifyRequest`) in a follow-up; the cookie-based user derivation already lands, so this is a one-line signature change plus the schema."
     },
     {
       "id": "CRA-003",
-      "level": "INFO",
       "severity": "INFO",
       "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/routers/admin/ops.py",
-      "line": 13,
-      "message": "dependencies=[Depends(require_server_ip)] is repeated verbatim in all six admin routers, so a seventh admin router can be added without it. The AC1 test is the only thing that catches that omission.",
-      "fix": "Optional: pass the dependency once at include time in app/main.py, or mount the six routers under a single parent APIRouter that carries the dependency. Acceptable as-is because the route-enumeration test fails closed on a forgotten router."
+      "axis": "behaviour",
+      "file": "app/routers/notifications.py",
+      "line": 62,
+      "message": "push_to_user logs a failed send but never unregisters the dead socket, so a socket whose ping loop has not yet terminated stays in _connections and re-logs notifications.ws_push_failed on every subsequent push (log amplification, unbounded registry growth for long-lived processes). AC5 only requires the log line, so this is an observation rather than a story gap.",
+      "fix": "Call _unregister(user_id, ws) in the except branch after logging."
     },
     {
       "id": "CRA-004",
-      "level": "INFO",
       "severity": "INFO",
-      "confidence": "medium",
-      "axis": "behaviour",
-      "file": "app/main.py",
-      "line": 57,
-      "message": "CORSMiddleware answers OPTIONS preflight for /api/admin/* before routing, so preflight responses are returned to any IP without the allowlist check. This leaks only route existence, no admin data, and matches how FastAPI middleware/dependency ordering works.",
-      "fix": "No change required for CHG-002; note it if the story ever grows a 'no admin surface visible off-allowlist' criterion."
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/dependencies.py",
+      "line": 40,
+      "message": "Asymmetry introduced by the diff: get_current_user now delegates claim extraction to session_user_id(), while get_current_admin still inlines decode_access_token() + payload.get('admin_sub') + the new `'purpose' in payload` guard. The purpose rule now lives in two places, so a future third token purpose must be remembered twice.",
+      "fix": "Add an admin_user_id(token) helper next to session_user_id() in app/services/auth_service.py and have get_current_admin call it."
     },
     {
       "id": "CRA-005",
-      "level": "INFO",
       "severity": "INFO",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": ".env.example",
-      "line": 73,
-      "message": "The comment says the check is 'checked before admin login/role checks', but no route in app/routers/ issues an admin token (payload key admin_sub is only ever read, in app/dependencies.py:42). The role-check half of the sentence is accurate; the login half describes an endpoint that does not exist yet. Pre-existing gap, surfaced by the new wording.",
-      "fix": "Reword to 'checked before admin authentication and role checks', or leave until an admin login route lands."
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/routers/notifications.py",
+      "line": 43,
+      "message": "The WebSocket authorises on the signed token alone, so unlike get_current_user it never re-checks that the user still exists, is_active, and has totp_verified. A deactivated user keeps receiving live pushes for the remaining life of the 8-hour cookie. CHG-004 declares this explicitly out of scope, so it is recorded, not charged against the diff.",
+      "fix": "None required for this story. If it is picked up later, resolve the User row before accept() the same way get_current_user does."
     },
     {
       "id": "CRA-006",
-      "level": "INFO",
       "severity": "INFO",
       "confidence": "high",
       "axis": "maintainability",
-      "file": "tests/unit/test_ip_allowlist.py",
-      "line": 20,
-      "message": "_request(host) and _depends_on(dependant, target) have unannotated parameters, against the project's 'static typing everywhere' rule. Low impact: mypy is scoped to app/ in CLAUDE.md, and the context pack records that ruff/mypy could not be run in this environment.",
-      "fix": "Annotate: def _request(host: str | None) -> SimpleNamespace and def _depends_on(dependant: Dependant, target: Callable[..., object]) -> bool."
+      "file": "app/routers/auth.py",
+      "line": 159,
+      "message": "The pending cookie name is expressed twice: the PENDING_2FA_COOKIE constant on the write side and the bare parameter name `pending_2fa` on the read side. Renaming the constant would silently stop the endpoint from reading the cookie it sets.",
+      "fix": "Bind the read through the constant: `pending_2fa: Optional[str] = Cookie(default=None, alias=PENDING_2FA_COOKIE)`."
     },
     {
       "id": "CRA-007",
-      "level": "INFO",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/routers/auth.py",
+      "line": 165,
+      "message": "The pending_2fa cookie is cleared only on the success path. After a 400 (bad code), an abandoned enrolment, or logout it stays in the browser until its 10-minute Max-Age elapses. Bounded by the TTL and by the totp_verified single-use check, so the exposure is small.",
+      "fix": "No change needed; if tightened later, delete the cookie on the 400 branch too."
+    },
+    {
+      "id": "CRA-008",
+      "severity": "INFO",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "app/routers/auth.py",
+      "line": 136,
+      "message": "The pending_2fa cookie is Secure, so the TOTP enrolment flow cannot complete over plain http (e.g. the docker compose app on http://localhost:8000). This matches the existing access_token cookie, which is already Secure, so it is consistent rather than a regression - noting it because it makes local manual testing of the new flow require TLS.",
+      "fix": "None. Exercise the flow through the TLS-terminating nginx service or via the unit tests."
+    },
+    {
+      "id": "CRA-009",
       "severity": "INFO",
       "confidence": "high",
       "axis": "maintainability",
-      "file": "specs/reviews/review-context-pack.md",
-      "line": 27,
-      "message": "ruff and mypy were not run for this change (not installed, no network). The diff is small and hand-checked, but the lint/type sensors this project relies on did not execute.",
-      "fix": "Run ruff check . and mypy app/ before merge once the environment allows."
+      "file": "app/routers/auth.py",
+      "line": 37,
+      "message": "callback() is still ~82 lines (provider dispatch + user creation + session issue), over the 30-line project limit. Pre-existing and grandfathered; the diff moved 11 lines out of it into _totp_setup_response, so the ratchet moved the right way. Recorded as context only.",
+      "fix": "None in this change. A later refactor could extract the per-provider userinfo parsing into a _userinfo(provider, client, token) helper."
     }
   ],
-  "stakeholder_readability": {
-    "assessment": "good, with one weak test name",
-    "notes": "The module docstring states the requirement in plain Given/When/Then language and each test carries its AC tag. Names like test_admin_route_from_unlisted_ip_is_forbidden_before_auth, test_admin_route_from_listed_ip_proceeds_to_authentication and test_empty_allowlist_denies_every_request read as the requirement to a non-technical reader. The exception is test_every_admin_route_depends_on_require_server_ip (CRA-001), whose name and body describe dependency wiring rather than the behaviour a stakeholder cares about."
-  }
+  "verified_correct": [
+    "AC1: pending cookie is HttpOnly/Secure/SameSite=Lax/Max-Age=600/Path=/api/auth/totp, JWT carries sub + purpose=totp_setup with exp-iat == 600, and no access_token is set on that branch.",
+    "Cookie path /api/auth/totp path-matches /api/auth/totp/verify per RFC 6265 5.1.4 and does not match a sibling like /api/auth/totpfoo.",
+    "AC2/AC3: verify derives the user only from the cookie; missing, expired, bad-signature, wrong-purpose, subject-less and plain-session tokens all 401 before any DB query (asserted via db.queries == 0).",
+    "AC4: totp_verified commit, access_token issue, pending cookie cleared on the same path, unchanged response body.",
+    "AC6/AC8: session_user_id rejects any token with a purpose claim; get_current_admin rejects purpose-bound tokens; a pending token is spent once its user is totp_verified.",
+    "No other call site decodes access tokens - decode_access_token has exactly three callers (dependencies.py, auth_service.py), so there is no third path where a purpose-bound token would still pass as a session.",
+    "R18: close(1008) happens before accept() and before registration for missing/garbage/expired/pending-2fa/other-user tokens; the finally + _unregister pair fixes the old KeyError/ValueError cleanup and preserves the user's other sockets.",
+    "Control flow of the OAuth callback is unchanged by the _totp_setup_response extraction; no schema provisioning or audit event was skipped or duplicated.",
+    "No test file or assertion was deleted (35 deletions, all in app/); the branch adds 754 lines of tests across 4 files and all 72 pass."
+  ]
 }
