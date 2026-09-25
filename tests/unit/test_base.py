@@ -26,25 +26,6 @@ class _ConcreteCrawler(BaseCrawler):
         return "applied"
 
 
-class _AwaitablePages:
-    """Mimics an awaitable `pages` so the happy-path arithmetic in
-    is_session_valid (`len(pages) >= 0`) is actually reachable."""
-
-    def __init__(self, pages: list):
-        self._pages = pages
-
-    def __await__(self):
-        async def _coro():
-            return self._pages
-
-        return _coro().__await__()
-
-
-class _ContextWithAwaitablePages:
-    def __init__(self, pages: list):
-        self.pages = _AwaitablePages(pages)
-
-
 class _ContextWithPlainPages:
     """Mimics the real playwright.BrowserContext.pages contract: a plain,
     non-awaitable list property."""
@@ -84,28 +65,19 @@ def test_application_receipt_defaults():
 
 
 @pytest.mark.asyncio
-async def test_is_session_valid_true_when_pages_awaitable_and_nonempty():
+async def test_is_session_valid_true_when_pages_nonempty():
+    """A real BrowserContext.pages is a plain, non-awaitable list."""
     crawler = _ConcreteCrawler()
-    context = _ContextWithAwaitablePages(["p1", "p2"])
-    assert await crawler.is_session_valid(context) is True
+    context = _ContextWithPlainPages(["p1", "p2"])
+    assert await crawler.is_session_valid(context) is True  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
-async def test_is_session_valid_true_when_pages_awaitable_and_empty():
+async def test_is_session_valid_true_when_pages_empty():
     """Pins len(pages) >= 0, not > 0: an empty page list is still 'valid'."""
     crawler = _ConcreteCrawler()
-    context = _ContextWithAwaitablePages([])
-    assert await crawler.is_session_valid(context) is True
-
-
-@pytest.mark.asyncio
-async def test_is_session_valid_false_on_real_playwright_style_context():
-    """Documents current behaviour: a real BrowserContext.pages is a plain
-    list, not awaitable, so `await context.pages` raises and this always
-    returns False for real contexts."""
-    crawler = _ConcreteCrawler()
-    context = _ContextWithPlainPages(["p1"])
-    assert await crawler.is_session_valid(context) is False
+    context = _ContextWithPlainPages([])
+    assert await crawler.is_session_valid(context) is True  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -115,7 +87,21 @@ async def test_is_session_valid_false_when_pages_attribute_missing():
     class _NoPages:
         pass
 
-    assert await crawler.is_session_valid(_NoPages()) is False
+    assert await crawler.is_session_valid(_NoPages()) is False  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_is_session_valid_false_when_pages_property_raises():
+    """Any failure reading `.pages` (not just a missing attribute) is treated
+    as an invalid session -- pins the intentionally broad except clause."""
+    crawler = _ConcreteCrawler()
+
+    class _BrokenPages:
+        @property
+        def pages(self):
+            raise RuntimeError("context closed")
+
+    assert await crawler.is_session_valid(_BrokenPages()) is False  # type: ignore[arg-type]
 
 
 def test_extract_skills_from_text_matches_case_insensitively():

@@ -96,9 +96,9 @@ class BaseCrawler(ABC):
         Default implementation; subclasses may override.
         """
         try:
-            pages = await context.pages
+            pages = context.pages
             return len(pages) >= 0
-        except Exception:
+        except Exception:  # noqa: BLE001 - any failure means the session cannot be confirmed valid
             return False
 
     def _extract_skills_from_text(self, text: str, taxonomy_skills: set[str]) -> list[str]:
