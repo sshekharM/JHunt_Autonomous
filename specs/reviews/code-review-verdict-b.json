@@ -1,108 +1,162 @@
 {
-  "verdict": "PASS",
-  "reviewer": "code-reviewer-b",
-  "range": "e483f81..HEAD",
-  "summary": { "block": 0, "warn": 4, "info": 6 },
+  "gate": "code-review",
+  "reviewer": "instance-b",
+  "verdict": "BLOCK",
+  "pass": false,
+  "range": "ea5e664..HEAD",
+  "story": "CHG-007",
+  "summary": { "block": 1, "warn": 5, "info": 7 },
   "findings": [
     {
       "id": "CRB-001",
-      "severity": "WARN",
-      "confidence": "high",
-      "axis": "maintainability",
-      "file": "app/security/totp.py",
-      "line": 30,
-      "description": "verify_totp is now dead production code. matched_totp_step replaced it at the only production call site (app/routers/auth.py); the sole remaining reference is tests/validation/test_full_validation.py:135. verify_totp is not step-aware, so it silently skips the CHG-006 replay guard: a future caller that reaches for the obvious-looking helper reintroduces the R17 replay hole the branch just closed.",
-      "fix": "Delete verify_totp and point tests/validation/test_full_validation.py at matched_totp_step, or keep it with an explicit docstring warning that it bypasses the replay guard and must not be used on the verify path."
+      "severity": "BLOCK",
+      "confidence": "medium",
+      "axis": "behaviour",
+      "file": "app/routers/onboarding.py",
+      "line": 295,
+      "issue": "CHG-007 makes the newest consent_records row authoritative (consent_store.current_consent -> consent_allows), but POST /api/onboarding/step/9 has no guard on user.onboarding_complete / onboarding_step. Any logged-in, TOTP-verified, active user can re-POST step 9 at any time; record_consent appends a fresh event='granted' row with consented_to_data_processing hardcoded True and auto_apply/llm_processing from the request body. That row instantly becomes current_consent, so it silently reverses a withdrawal and re-opens the LLM/auto-apply gates. The story states re-grant is out of scope and that 'there is no re-grant endpoint' (specs/stories/CHG-007-consent-withdrawal.md:53-56); after this diff that is false. The endpoint is untouched by the diff, but the diff changes its meaning from an inert append to an effective consent re-grant, and the audit trail records it as onboarding.complete / consent.granted rather than a re-grant. Only the data_processing case is incidentally protected (soft delete deactivates the user, so get_current_user 401s).",
+      "fix": "Add a two-line guard at the top of step9_consent: if user.onboarding_complete: raise HTTPException(409, 'Consent already recorded; withdrawal is at /api/consent/withdraw.'). Alternatively, accept the path explicitly by documenting it in the story and auditing it as consent.regranted - but it must not stay an undocumented bypass of the enforcement gate."
     },
     {
       "id": "CRB-002",
       "severity": "WARN",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": "app/routers/auth.py",
-      "line": 158,
-      "description": "_check_totp_code has an asymmetric commit contract that nothing states: the failure branch commits the counter itself (line 170), while the success branch (record_success at line 175, which sets totp_failed_attempts/totp_locked_until/totp_last_used_step) relies on the caller committing afterwards. A second caller that forgets the commit would drop the replay step and the counter reset with no test failing, since only verify_totp_code is exercised.",
-      "fix": "Say so in the docstring ('failures commit; the caller must commit on success so totp_verified and the step land in one transaction'), or return a flag and let verify_totp_code own both commits."
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "tests/integration/test_consent_withdrawal_db.py",
+      "line": 89,
+      "issue": "The test runs `alembic downgrade base` in a finally block (and `downgrade 0005` mid-test) against whatever settings.database_url points at, with no guard that the target is a disposable database. RUN_DB_TESTS=1 with a developer's or staging DATABASE_URL drops every shared table. The repo's own risk map (R12) treats irreversible data operations as requiring explicit care.",
+      "fix": "Before the first _alembic call, assert the target is a test database - e.g. `assert settings.database_url.rsplit('/', 1)[-1].endswith('_test')` (or require an explicit TEST_DATABASE_URL env var) and skip otherwise."
     },
     {
       "id": "CRB-003",
       "severity": "WARN",
-      "confidence": "low",
+      "confidence": "medium",
       "axis": "behaviour",
-      "file": "app/routers/auth.py",
-      "line": 168,
-      "description": "Unexercised failure path: app.security.encryption.decrypt raises InvalidToken on the b\"\" that app/compliance/deletion.py:86 writes for an anonymised user, so decrypt(user.totp_secret_encrypted) in _check_totp_code (line 168) and in _totp_setup_response (line 127) would surface as a 500 from main.py's global Exception handler rather than a 4xx. Migration 0004 deliberately handles the blank case (decrypt_secret returns \"\" for b\"\"); the application path does not. Today it is unreachable only by two incidental invariants: _anonymise rewrites email_hash so the callback lookup misses, and _pending_2fa_user rejects totp_verified users (anonymise requires a session, which requires verification). Neither invariant is pinned by a test.",
-      "fix": "Guard the verify path on a blank secret (treat b\"\" as 'no enrolment', 401/409, or check user.is_active in _pending_2fa_user) and add a test that an anonymised row cannot reach decrypt."
+      "file": "app/services/consent_service.py",
+      "line": 39,
+      "issue": "The consent row is committed inside withdraw_consent before the side effects run. If disable_auto_apply (separate tenant session) or execute_deletion raises - transient tenant-schema or DB error - the request 500s with consent already withdrawn, and a retry is a no-op because withdrawal.withdrawn is then empty, so the side effect is never applied at all. For data_processing this means the DPDPA-mandated account deletion is silently skipped forever; for auto_apply the tenant preference stays enabled (masked only by the consent gate in apply_matched_jobs).",
+      "fix": "Drive the side effects off the resulting record rather than the delta, so a retry is self-healing: `if not consent_allows(withdrawal.record, 'auto_apply'): await disable_auto_apply(...)` and the equivalent guard (plus an is_active check) for the soft delete."
     },
     {
       "id": "CRB-004",
       "severity": "WARN",
       "confidence": "medium",
       "axis": "behaviour",
-      "file": "alembic/versions/0004_encrypt_totp_secret.py",
-      "line": 88,
-      "description": "The only executed proof of AC6/AC7 for a destructive column-drop migration is SQLite. On SQLite op.batch_alter_table recreates the table, so the unit test never exercises the PostgreSQL statements this migration actually emits (ALTER COLUMN ... SET NOT NULL, DROP COLUMN, bytea executemany with mixed b\"\"/ciphertext/NULL values). tests/integration/test_totp_secret_migration.py is written for exactly this but has never been run (context pack: 'Not run: PostgreSQL migration round trip'). Residual risk, not a defect I can reproduce.",
-      "fix": "Run tests/integration/test_totp_secret_migration.py with RUN_DB_TESTS=1 in the CI integration job (or against a throwaway Postgres container) and record the result before this reaches an environment holding real rows."
+      "file": "app/compliance/consent_store.py",
+      "line": 81,
+      "issue": "'Current consent' is defined solely by ORDER BY consented_at DESC LIMIT 1, and consented_at is stamped by the application host (_withdrawal_row, consent_store.py:119; record_consent relies on the Python column default), not by the database. There is no tie-break column, so two rows with equal timestamps order non-deterministically, and any backwards clock movement (NTP step, or a second app/worker container with a skewed clock - docker compose runs app, worker and beat) can make a withdrawal row sort before the grant it supersedes, leaving the withdrawal silently ineffective. The FOR UPDATE lock serialises the writers but does not guarantee the new row sorts last.",
+      "fix": "Add a deterministic tie-break and a server-side clock: `.order_by(ConsentRecord.consented_at.desc(), ConsentRecord.id.desc())` in current_consent (and the mirrored ASC order in consent_history), and stamp consented_at with server_default=func.now() / an inserted-sequence column rather than the app clock."
     },
     {
       "id": "CRB-005",
-      "severity": "INFO",
+      "severity": "WARN",
       "confidence": "high",
-      "axis": "maintainability",
-      "file": "alembic/versions/0004_encrypt_totp_secret.py",
-      "line": 56,
-      "description": "The None branches of encrypt_secret/decrypt_secret are unreachable against the real schema: users.totp_secret and admin_users.totp_secret are NOT NULL from 0001 and neither 0002 nor 0003 relaxes that. test_blank_and_null_secrets_stay_blank_both_ways pins behaviour the schema cannot produce, and if a NULL ever did appear the subsequent SET NOT NULL would fail mid-migration rather than being handled.",
-      "fix": "Leave as defensive code, or drop the None branch and let the migration fail loudly on an unexpected NULL."
+      "axis": "behaviour",
+      "file": "tests/unit/test_consent_withdrawal.py",
+      "line": 165,
+      "issue": "Test honesty for AC5's concurrency clause. test_withdrawal_locks_the_user_row_before_reading_consent only asserts the compiled SQL string starts with 'SELECT users.id' and ends with 'FOR UPDATE' against a fake DB; it would still pass if the lock had no effect. The PostgreSQL integration test is single-threaded and, per the context pack, was not executed (RUN_DB_TESTS unset). Nothing that ran proves two concurrent withdrawals cannot copy a stale flag back to True.",
+      "fix": "Add a two-session case to tests/integration/test_consent_withdrawal_db.py: open two AsyncSessions, withdraw auto_apply in one and llm_processing in the other concurrently, and assert the final row has both flags False and exactly three rows exist."
     },
     {
       "id": "CRB-006",
-      "severity": "INFO",
-      "confidence": "high",
+      "severity": "WARN",
+      "confidence": "medium",
       "axis": "maintainability",
-      "file": "app/security/totp.py",
-      "line": 36,
-      "description": "The 90-second acceptance window is now expressed twice in one file: valid_window=1 in verify_totp (line 33) and the literal (-1, 0, 1) tuple in matched_totp_step (line 39). If one is ever tuned the other will drift.",
-      "fix": "Hoist the window to a module constant (e.g. TOTP_WINDOW_STEPS = 1) and derive both from it — or moot it by removing verify_totp per CRB-001."
+      "file": "app/tasks/auto_apply.py",
+      "line": 60,
+      "issue": "apply_matched_jobs grew from 219 to 228 lines (risk map R15 already names it as the worst offender against the project's 30-line ceiling). CLAUDE.md's ratchet says existing oversized code is grandfathered but an edit may not make it worse. About half the growth is unrelated import re-sorting inside _inner (auto_apply.py:70-78), which is drive-by style churn in the same function.",
+      "fix": "Keep the two _consent_refused calls but pull the prelude out: extract a module-level `async def _load_prefs(tenant_db)` (or `_gate(user_id, consent, prefs)`) returning None when the task must stop, and revert the multi-line reformat of the local import block so the net line count does not increase."
     },
     {
       "id": "CRB-007",
-      "severity": "INFO",
-      "confidence": "high",
+      "severity": "WARN",
+      "confidence": "medium",
       "axis": "maintainability",
-      "file": "app/services/totp_lockout.py",
-      "line": 27,
-      "description": "record_failure never clears an expired totp_locked_until; only record_success does. After a lock lapses the column keeps a past timestamp, so the row cannot be read as 'locked' vs 'was locked once' without comparing to now(). Behaviourally correct (lock_seconds_left treats past as unlocked) but makes the column ambiguous for support queries and future admin UI.",
-      "fix": "Set user.totp_locked_until = None on the first failure recorded after the lock has lapsed, or document that the column is a deadline, not a state flag."
+      "file": "app/routers/consent.py",
+      "line": 37,
+      "issue": "Two independent definitions of 'current consent': the router derives it from consent_history(...)[-1] (ORDER BY consented_at ASC, take last) while every enforcement path uses consent_store.current_consent (ORDER BY consented_at DESC LIMIT 1). They agree only by coincidence of the two orderings; a change to either (see CRB-004) makes what the user is shown diverge from what is enforced.",
+      "fix": "Have the GET handler call consent_store.current_consent(user.id, db) for the `current` field (or add one helper in the store that returns history plus its latest element), so there is a single definition."
     },
     {
       "id": "CRB-008",
       "severity": "INFO",
-      "confidence": "medium",
-      "axis": "maintainability",
-      "file": "app/config.py",
-      "line": 89,
-      "description": "totp_max_failures and totp_lockout_minutes have no lower bound. TOTP_MAX_FAILURES=0 locks an account on the very first bad code (record_failure increments to 1 and 1 >= 0), and a negative value does the same — a misconfiguration self-DoS. Consistent with the rest of Settings (jwt_expiry_hours is unconstrained too), so noted rather than blocked.",
-      "fix": "Constrain with Field(5, ge=1) / Field(15, ge=1) if the project starts validating settings."
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/compliance/consent_store.py",
+      "line": 134,
+      "issue": "The idempotent no-op return and the NoConsentOnRecord raise both leave the users-row FOR UPDATE lock held, with no commit or rollback, until the caller's session closes at the end of the request.",
+      "fix": "await db.rollback() before `return Withdrawal(record=latest, withdrawn=())` and before raising NoConsentOnRecord."
     },
     {
       "id": "CRB-009",
       "severity": "INFO",
       "confidence": "high",
-      "axis": "maintainability",
-      "file": "tests/integration/test_totp_secret_migration.py",
-      "line": 35,
-      "description": "_alembic and the create_async_engine/dispose helper duplicate tests/integration/test_shared_migrations.py:25 and :50 near-verbatim. Trivial glue, but it is the second copy and a third is likely with the next migration.",
-      "fix": "Move _alembic and the engine helper into a shared integration conftest fixture and import it in both modules."
+      "axis": "behaviour",
+      "file": "app/routers/consent.py",
+      "line": 31,
+      "issue": "After withdrawing data_processing the soft delete sets is_active=False, so get_current_user 401s and the user can no longer read GET /api/consent - they lose access to their own consent history immediately after exercising the withdrawal right.",
+      "fix": "Out of scope for CHG-007 (deletion.py is frozen), but note it in the story's follow-up: the consent view should remain reachable for a deactivated-but-not-purged account."
     },
     {
       "id": "CRB-010",
       "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/tasks/auto_apply.py",
+      "line": 81,
+      "issue": "Consent is read once at task start; a withdrawal that lands while the per-user run is in flight is not observed, so up to apply_cap_daily applications can still be made after the withdrawal returns 200.",
+      "fix": "Either re-check consent_allows(consent, 'llm_processing') inside the per-job loop, or document the bounded window in the story."
+    },
+    {
+      "id": "CRB-011",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "behaviour",
+      "file": "app/compliance/dpdpa.py",
+      "line": 35,
+      "issue": "Forward deploy ordering: the new model selects consent_records.event, so the new code against a pre-0006 database fails on every consent read (login/onboarding/consent). The migration docstring only documents the backward direction (old code, new DB).",
+      "fix": "Confirm the deploy entrypoint runs `alembic upgrade head` before the app starts, and say so in the migration docstring."
+    },
+    {
+      "id": "CRB-012",
+      "severity": "INFO",
       "confidence": "medium",
       "axis": "maintainability",
-      "file": "alembic/versions/0004_encrypt_totp_secret.py",
-      "line": 12,
-      "description": "The docstring's 'keyset-paged in batches of BATCH_SIZE' can be read as lock relief, but every batch runs inside the migration's single transaction and is followed by SET NOT NULL, which takes ACCESS EXCLUSIVE over the whole table. The batching bounds result-set memory only.",
-      "fix": "Reword to 'bounded result sets (one transaction; the table is exclusively locked for the whole migration)' so a future operator does not assume an online migration."
+      "file": "app/compliance/consent_store.py",
+      "line": 100,
+      "issue": "consent_allows raises KeyError for a scope outside CONSENT_SCOPES instead of failing closed, which is at odds with the fail-closed contract in AC11 and the function's own docstring.",
+      "fix": "`return bool(getattr(record, CONSENT_SCOPES[scope]))` -> guard with `if scope not in CONSENT_SCOPES: return False`."
+    },
+    {
+      "id": "CRB-013",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "app/schemas/consent.py",
+      "line": 36,
+      "issue": "WithdrawConsentResponse.account_deletion is dict[str, Any], which leaks the untyped return of execute_deletion into the public API contract (CLAUDE.md asks for static typing everywhere) and leaves the response shape undocumented in OpenAPI.",
+      "fix": "Declare a small AccountDeletion model (mode, message, hard_delete_after) and use `AccountDeletion | None`, constructed from the summary dict."
+    },
+    {
+      "id": "CRB-014",
+      "severity": "INFO",
+      "confidence": "high",
+      "axis": "maintainability",
+      "file": "tests/unit/test_main.py",
+      "line": 13,
+      "issue": "test_main.py pins the Windows event-loop policy and the CORS configuration - neither is touched by CHG-007 and neither is an acceptance criterion; the router-registration check for AC7 already lives in test_consent.py. Harmless but outside the surgical scope of this story (as is the ruff import re-sort in app/main.py).",
+      "fix": "No action needed; keep in mind for scope hygiene, or move these pins to their own characterisation commit."
     }
+  ],
+  "verified_correct": [
+    "AC1 migration 0006 chain, additive server default, reversible downgrade (tests/unit/test_0006_consent_withdrawal.py, chain test extended).",
+    "AC3 append-only: _withdrawal_row constructs a new ConsentRecord and copies llm_choice/consent_version/consent_text_hash; no UPDATE or DELETE anywhere in the diff.",
+    "AC4 audit payload carries user_id and scopes only - no IP or user agent (asserted, including a negative repr check).",
+    "AC7 contract: empty list, unknown scope, non-list, missing key and extra key all 422 via the Literal + min_length=1 + extra='forbid' schema; NoConsentOnRecord -> 409; both routes 401 without a cookie; router registered in app.main.",
+    "AC9 enforcement completeness: grep confirms generate_tailored_resume / generate_cover_letter have no callers outside apply_matched_jobs, apply_to_job/queue_for_hitl have no other callers, and naukri._answer_screening_questions is string-matching, not an LLM call - so the gated paths really are the only LLM egress on this flow.",
+    "AC11 fail-closed: consent_allows requires data_processing and returns False for a missing record; parametrised over all three scopes.",
+    "expire_on_commit=False on AsyncSessionLocal, and FastAPI dependency caching, mean the User passed to execute_deletion is still attached and unexpired after withdraw_consent's commit.",
+    "FOR UPDATE ordering is sound under PostgreSQL's default READ COMMITTED: the blocked transaction takes a fresh snapshot after the lock is released, so it sees the committed withdrawal.",
+    "app/compliance/deletion.py is unchanged (R12 constraint honoured)."
   ]
 }

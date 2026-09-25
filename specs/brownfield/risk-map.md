@@ -160,6 +160,17 @@ Act, consent capture is the legally load-bearing part.
 Fix: cover `record_consent` and assert an audit entry is written for each
 consent grant and withdrawal.
 
+Status (2026-09-25): grant covered by `tests/unit/test_consent_store.py`.
+Withdrawal added by CHG-007: `withdraw_consent` appends a `event='withdrawn'`
+row (migration 0006; old rows never updated), audits `consent.withdrawn`
+with scopes only, and is exposed at `GET /api/consent` and
+`POST /api/consent/withdraw`. `apply_matched_jobs` checks current consent
+(fail closed) before touching tenant data and before LLM tailoring.
+Remaining: no re-grant flow; `screening_service` LLM call is ungated (no
+caller yet); withdrawing `data_processing` relies on the soft delete in
+`deletion.py`, which never writes `scheduled_deletion_at` and has no purge
+job (see R12 — needs human approval to fix).
+
 ---
 
 ## MEDIUM — data / operations
