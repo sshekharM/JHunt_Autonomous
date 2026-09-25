@@ -12,7 +12,10 @@ from unittest.mock import patch
 import sqlalchemy as sa
 
 VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
-CHAIN = ["0001_initial_shared_schema.py", "0002_phase4_columns.py", "0003_align_shared_schema_with_models.py"]
+CHAIN = [
+    "0001_initial_shared_schema.py", "0002_phase4_columns.py",
+    "0003_align_shared_schema_with_models.py", "0004_encrypt_totp_secret.py",
+]
 
 
 def _load(name):
@@ -22,20 +25,33 @@ def _load(name):
     return module
 
 
+def _apply(tables, kind, args, kwargs, batch_table):
+    """Apply one recorded op call; batch ops (``with op.batch_alter_table(t)``) omit the table."""
+    name = kind.rsplit(".", 1)[-1]
+    table, rest = (batch_table, args) if "__enter__" in kind else (args[0] if args else None, args[1:])
+    if name == "create_table":
+        tables[table] = {c.name: c for c in rest if isinstance(c, sa.Column)}
+    elif name == "add_column":
+        tables[table][rest[0].name] = rest[0]
+    elif name == "drop_column":
+        tables[table].pop(rest[0])
+    elif name == "alter_column" and "nullable" in kwargs:
+        tables[table][rest[0]].nullable = kwargs["nullable"]
+
+
 def _replay() -> dict[str, dict[str, sa.Column]]:
     tables: dict[str, dict[str, sa.Column]] = {}
     for name in CHAIN:
         module = _load(name)
         with patch.object(module, "op") as op:
+            op.get_bind.return_value.execute.return_value.all.return_value = []  # empty tables
             module.upgrade()
+        batch_table = None
         for call in op.mock_calls:
-            kind, args = call[0], call[1]
-            if kind == "create_table":
-                tables[args[0]] = {c.name: c for c in args[1:] if isinstance(c, sa.Column)}
-            elif kind == "add_column":
-                tables[args[0]][args[1].name] = args[1]
-            elif kind == "drop_column":
-                tables[args[0]].pop(args[1])
+            kind, args, kwargs = call
+            if kind == "batch_alter_table":
+                batch_table = args[0]
+            _apply(tables, kind, args, kwargs, batch_table)
     return tables
 
 

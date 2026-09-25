@@ -10,7 +10,7 @@ from app.services.auth_service import (
     oauth, create_access_token, build_user_thumbprint,
     create_pending_2fa_token, decode_pending_2fa_token, PENDING_2FA_TTL,
 )
-from app.security.encryption import encrypt, sha256_hash
+from app.security.encryption import decrypt, encrypt, sha256_hash
 from app.security.totp import generate_totp_secret, get_totp_uri, generate_qr_code_base64, verify_totp
 from app.security.audit_log import audit
 from app.security.rate_limiter import limiter
@@ -90,7 +90,7 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
             schema_name="",
             oauth_provider=OAuthProvider(provider),
             oauth_sub=sub,
-            totp_secret=generate_totp_secret(),
+            totp_secret_encrypted=encrypt(generate_totp_secret()),
             totp_verified=False,
             onboarding_complete=False,
             onboarding_step=1,
@@ -122,7 +122,7 @@ async def callback(request: Request, provider: str, db: AsyncSession = Depends(g
 
 def _totp_setup_response(user: User, email: str, is_new_user: bool) -> JSONResponse:
     """TOTP enrolment payload plus the short-lived pending_2fa cookie that /totp/verify requires."""
-    uri = get_totp_uri(user.totp_secret, email)
+    uri = get_totp_uri(decrypt(user.totp_secret_encrypted), email)
     qr_b64 = generate_qr_code_base64(uri)
     audit("auth.totp_setup_required", user_id=user.id)
     setup = JSONResponse({
@@ -165,7 +165,7 @@ async def verify_totp_code(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _pending_2fa_user(pending_2fa, db)
-    if not verify_totp(user.totp_secret, body.code):
+    if not verify_totp(decrypt(user.totp_secret_encrypted), body.code):
         audit("auth.totp_failed", user_id=user.id)
         raise HTTPException(status_code=400, detail="Invalid TOTP code.")
 

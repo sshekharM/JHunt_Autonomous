@@ -47,7 +47,8 @@ class User(Base):
     oauth_sub: Mapped[str] = mapped_column(String(256))
 
     # 2FA — mandatory TOTP
-    totp_secret: Mapped[str] = mapped_column(String(64))
+    # Fernet-encrypted (CHG-005); b"" once the user is anonymised
+    totp_secret_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
     totp_verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # State

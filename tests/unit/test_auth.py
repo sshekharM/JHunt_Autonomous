@@ -23,7 +23,7 @@ from sqlalchemy.dialects import postgresql
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.routers import auth
-from app.security.encryption import sha256_hash
+from app.security.encryption import decrypt, encrypt, sha256_hash
 from app.security.rate_limiter import limiter
 from app.services.auth_service import (
     create_access_token,
@@ -88,7 +88,7 @@ GOOGLE = _FakeOAuthClient({"userinfo": {"email": EMAIL, "sub": "g-1", "name": "A
 
 def _user(verified=False, onboarded=False):
     return SimpleNamespace(
-        id=USER_ID, totp_secret=SECRET, totp_verified=verified,
+        id=USER_ID, totp_secret_encrypted=encrypt(SECRET), totp_verified=verified,
         onboarding_complete=onboarded, is_active=True,
     )
 
@@ -183,6 +183,13 @@ def test_callback_for_unverified_user_sets_a_short_lived_pending_cookie(api):
     assert api.events == ["auth.totp_setup_required"]
 
 
+def test_callback_builds_the_provisioning_uri_from_the_decrypted_secret(api):
+    """CHG-005 AC3: the stored secret is ciphertext; the QR/URI carry the real one."""
+    body = _callback(api).json()
+
+    assert f"secret={SECRET}" in body["totp_uri"] and body["qr_code_base64"]
+
+
 def test_callback_looks_the_user_up_by_lowercased_email_hash(api):
     _callback(api)
 
@@ -195,6 +202,9 @@ def test_callback_creates_an_unverified_user_on_first_login(api):
 
     [created] = api.db.added
     assert created.totp_verified is False and created.oauth_sub == "g-1"
+    secret = decrypt(created.totp_secret_encrypted)  # CHG-005 AC3: stored encrypted
+    assert len(secret) == 32 and secret.encode() not in created.totp_secret_encrypted
+    assert f"secret={secret}" in response.json()["totp_uri"]
     assert created.onboarding_complete is False and created.onboarding_step == 1
     assert created.email_hash == sha256_hash(EMAIL.lower()) and api.db.commits == 1
     assert response.json()["is_new_user"] is True

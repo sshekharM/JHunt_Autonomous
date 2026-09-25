@@ -30,7 +30,7 @@ class AdminUser(Base):
     role: Mapped[AdminRole] = mapped_column(
         SAEnum(AdminRole, name="admin_role_enum"), default=AdminRole.support_admin
     )
-    totp_secret: Mapped[str] = mapped_column(String(64))
+    totp_secret_encrypted: Mapped[bytes] = mapped_column(LargeBinary)  # Fernet (CHG-005)
     totp_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

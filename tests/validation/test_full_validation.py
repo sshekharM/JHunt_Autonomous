@@ -776,7 +776,7 @@ class TestDeletionModes:
         user.is_active = True
         user.email_encrypted = b"encrypted_data"
         user.email_hash = "hash123"
-        user.totp_secret = "TOTP_SECRET"
+        user.totp_secret_encrypted = b"TOTP_SECRET"
         user.oauth_sub = "oauth123"
         return user
 

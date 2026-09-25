@@ -62,5 +62,5 @@ async def test_anonymise_blanks_pii_on_the_user_row():
     user = _user(VALID)
     with patch.object(deletion, "audit"):
         await deletion.execute_deletion(user, deletion.DeletionMode.anonymise, _db())
-    assert user.email_encrypted == b"" and user.totp_secret == "" and user.oauth_sub == ""
+    assert user.email_encrypted == b"" and user.totp_secret_encrypted == b"" and user.oauth_sub == ""
     assert user.email_hash == "anonymised_user-1" and user.is_active is False

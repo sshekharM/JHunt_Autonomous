@@ -87,6 +87,11 @@ each author remembering.
 Fix: assert the policy in a test that reflects over `app/models/` and
 `app/tenant_models/` columns, so adding an unencrypted PII field fails CI.
 
+Update (CHG-005): the last two known violations are fixed. The TOTP seed now
+lives in `users.totp_secret_encrypted` and `admin_users.totp_secret_encrypted`
+(Fernet; migration 0004 encrypts existing rows). `KNOWN_VIOLATIONS` is empty,
+which closes SEC-004.
+
 ### R7 — Tenant schema name is interpolated into SQL
 `app/database.py:37` — `SET search_path TO "{schema_name}", public`; `:47` —
 `CREATE SCHEMA IF NOT EXISTS "{schema_name}"`.
