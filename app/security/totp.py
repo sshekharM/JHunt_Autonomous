@@ -1,10 +1,11 @@
+import base64
+import io
 from datetime import datetime
 
 import pyotp
-from pyotp.utils import strings_equal
 import qrcode
-import io
-import base64
+from pyotp.utils import strings_equal
+
 from app.config import settings
 
 

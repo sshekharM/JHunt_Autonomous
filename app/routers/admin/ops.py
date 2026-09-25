@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select, func
+
 from app.database import get_db
-from app.models.user import User
-from app.models.portal_account import SystemPortalAccount
-from app.models.admin import AdminRole
 from app.dependencies import require_role
+from app.models.admin import AdminRole
+from app.models.portal_account import SystemPortalAccount
+from app.models.user import User
 from app.security.ip_allowlist import require_server_ip
 
 router = APIRouter(

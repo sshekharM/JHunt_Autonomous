@@ -8,11 +8,12 @@ provision_user_schema() runs this chain for every new user at onboarding.
 """
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import Connection, MetaData
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+from alembic import command
 
 TENANT_SCRIPT_LOCATION = str(Path(__file__).resolve().parent.parent / "migrations" / "tenant")
 
@@ -20,7 +21,14 @@ TENANT_SCRIPT_LOCATION = str(Path(__file__).resolve().parent.parent / "migration
 def tenant_metadata() -> MetaData:
     """TenantBase metadata with every tenant model module imported (registered)."""
     from app.tenant_models import (  # noqa: F401
-        application, job, ml_feedback, notification, profile, resume, screening_qa, skill,
+        application,
+        job,
+        ml_feedback,
+        notification,
+        profile,
+        resume,
+        screening_qa,
+        skill,
     )
     return profile.TenantBase.metadata
 

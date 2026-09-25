@@ -1,5 +1,7 @@
 import hashlib
+
 from cryptography.fernet import Fernet
+
 from app.config import settings
 
 _fernet = Fernet(settings.fernet_key.encode())

@@ -1,4 +1,5 @@
 import structlog
+
 from app.llm import router as llm_router
 from app.llm.cover_letter_prompt import build_cover_letter_prompt
 

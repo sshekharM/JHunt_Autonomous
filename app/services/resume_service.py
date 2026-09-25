@@ -4,14 +4,12 @@ Resume service: parse → tailor via LLM → render PDF → store in MinIO.
 import io
 import json
 import uuid
-from datetime import datetime, timezone
 
 import pdfplumber
 import structlog
 from playwright.async_api import async_playwright
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.llm import router as llm_router
 from app.llm.resume_prompt import build_resume_tailoring_prompt
 from app.services.storage_service import download_resume, upload_resume

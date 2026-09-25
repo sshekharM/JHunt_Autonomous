@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
-from app.notifications import email_client, telegram_bot, discord_bot
+from app.notifications import discord_bot, email_client, telegram_bot
 from app.routers.notifications import push_to_user
 from app.security.encryption import decrypt
 from app.tenant_models.notification import NotificationChannel, NotificationLog

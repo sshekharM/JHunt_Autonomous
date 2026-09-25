@@ -3,11 +3,12 @@ Crawl portal tasks — runs via Celery Beat every 4 hours per portal.
 Each invocation uses the system portal account, not any user's personal session.
 """
 import asyncio
-from typing import Optional
-from app.crawlers.registry import crawler_class_for, is_supported
-from app.tasks.celery_app import celery_app
-from app.security.audit_log import audit
+
 import structlog
+
+from app.crawlers.registry import crawler_class_for, is_supported
+from app.security.audit_log import audit
+from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.crawl_jobs")
 
@@ -33,13 +34,15 @@ def is_known_portal(portal_name: str) -> bool:
 
 
 async def _run_crawl(portal_name: str) -> dict:
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select, text
+
     from app.crawlers.session_manager import get_context
     from app.database import AsyncSessionLocal
+    from app.models.portal_account import PortalAccountHealth, SystemPortalAccount
     from app.services.job_service import store_jobs
     from app.services.taxonomy_service import get_keyword_sets_for_crawling
-    from app.models.portal_account import SystemPortalAccount, PortalAccountHealth
-    from sqlalchemy import select, text
-    from datetime import datetime, timezone
 
     CrawlerClass = crawler_class_for(portal_name)
     crawler = CrawlerClass()
@@ -172,4 +175,5 @@ def crawl_portal(self, portal_name: str):
         raise self.retry(exc=exc)
 
 
-from app.tasks.match_jobs import match_all_users  # noqa: E402 — avoids circular at module level
+# Imported at the bottom on purpose: a module-level import here is circular.
+from app.tasks.match_jobs import match_all_users

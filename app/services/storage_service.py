@@ -1,7 +1,9 @@
+import uuid
+
 from minio import Minio
 from minio.error import S3Error
+
 from app.config import settings
-import uuid
 
 _client = Minio(
     settings.minio_endpoint,

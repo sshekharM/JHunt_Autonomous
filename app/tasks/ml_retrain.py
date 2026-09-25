@@ -8,10 +8,12 @@ Phase 5: Full per-skill boosting via gradient feedback loop.
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
-from app.config import settings
-from app.tasks.celery_app import celery_app
-from app.security.audit_log import audit
+
 import structlog
+
+from app.config import settings
+from app.security.audit_log import audit
+from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.ml_retrain")
 
@@ -24,9 +26,10 @@ MIN_FEEDBACK_SAMPLES = 5
 
 
 async def _retrain_for_user(user_id: str, schema_name: str) -> dict:
+    from sqlalchemy import func, select, text
+
     from app.database import tenant_session
-    from app.tenant_models.ml_feedback import MLFeedback, OutcomeSignal
-    from sqlalchemy import select, text, func
+    from app.tenant_models.ml_feedback import MLFeedback
 
     async with tenant_session(schema_name) as db:
         result = await db.execute(
@@ -107,9 +110,10 @@ async def _retrain_for_user(user_id: str, schema_name: str) -> dict:
 
 
 async def _retrain_all() -> dict:
+    from sqlalchemy import select
+
     from app.database import AsyncSessionLocal
     from app.models.user import User
-    from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -167,9 +171,10 @@ def purge_stale_resumes():
 
 async def _tenant_schemas() -> list[str]:
     """Schema names of every user whose tenant schema has been provisioned."""
+    from sqlalchemy import select
+
     from app.database import AsyncSessionLocal
     from app.models.user import User
-    from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User.schema_name).where(User.schema_name != ""))
@@ -179,10 +184,11 @@ async def _tenant_schemas() -> list[str]:
 async def _purge_tenant_resumes(schema_name: str, cutoff: datetime) -> tuple[int, int]:
     """Delete one tenant's stale tailored-resume objects and mark their rows purged
     (rows are kept: applications reference them). Returns (purged, errors)."""
+    from sqlalchemy import select
+
     from app.database import tenant_session
     from app.services import storage_service
     from app.tenant_models.resume import TailoredResume
-    from sqlalchemy import select
 
     purged = errors = 0
     async with tenant_session(schema_name) as db:

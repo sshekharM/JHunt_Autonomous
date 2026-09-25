@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from app.models.admin import AdminRole
-from app.dependencies import require_role
-from app.security.ip_allowlist import require_server_ip
+
 from app.config import settings
+from app.dependencies import require_role
+from app.models.admin import AdminRole
 from app.security.audit_log import audit
+from app.security.ip_allowlist import require_server_ip
 
 router = APIRouter(
     prefix="/api/admin/config", tags=["admin-config"],
