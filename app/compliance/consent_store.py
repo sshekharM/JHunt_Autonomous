@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
 from hashlib import sha256
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.compliance.dpdpa import ConsentRecord
 from app.security.audit_log import audit
-
 
 CURRENT_CONSENT_VERSION = "1.0"
 

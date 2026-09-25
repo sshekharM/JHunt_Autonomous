@@ -1,5 +1,5 @@
-import sys
 import asyncio
+import sys
 
 import structlog
 from fastapi import FastAPI, Request
@@ -16,15 +16,15 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.security.rate_limiter import limiter
-from app.routers import auth, onboarding, dashboard, notifications
-from app.routers.applications import router as applications_router
-from app.routers.admin import users as admin_users
-from app.routers.admin import portals as admin_portals
-from app.routers.admin import crawls as admin_crawls
-from app.routers.admin import taxonomy as admin_taxonomy
+from app.routers import auth, dashboard, notifications, onboarding
 from app.routers.admin import config as admin_config
+from app.routers.admin import crawls as admin_crawls
 from app.routers.admin import ops as admin_ops
+from app.routers.admin import portals as admin_portals
+from app.routers.admin import taxonomy as admin_taxonomy
+from app.routers.admin import users as admin_users
+from app.routers.applications import router as applications_router
+from app.security.rate_limiter import limiter
 
 structlog.configure(
     processors=[

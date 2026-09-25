@@ -57,9 +57,15 @@ def _replay() -> dict[str, dict[str, sa.Column]]:
 
 
 def _models() -> sa.MetaData:
-    from app.database import Base
-    from app.models import user, admin, portal_account, job, skill_taxonomy  # noqa: F401
     from app.compliance.dpdpa import ConsentRecord  # noqa: F401
+    from app.database import Base
+    from app.models import (  # noqa: F401
+        admin,
+        job,
+        portal_account,
+        skill_taxonomy,
+        user,
+    )
     return Base.metadata
 
 

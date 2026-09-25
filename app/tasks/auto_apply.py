@@ -2,14 +2,14 @@
 Celery tasks for autonomous job application.
 """
 import asyncio
-from datetime import datetime, date, timezone
-from app.services import notification_service
+from datetime import date, datetime, timezone
 
 import structlog
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from app.database import AsyncSessionLocal, get_tenant_db
 from app.models.user import User
+from app.services import notification_service
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.auto_apply")
@@ -55,11 +55,15 @@ def apply_matched_jobs(self, user_id: str, schema_name: str):
          - Auto mode → tailored resume + cover letter → apply_to_job
     """
     async def _inner():
-        from app.tenant_models.profile import UserPreferences
-        from app.tenant_models.job import MatchedJob
-        from app.tenant_models.application import JobApplication, ApplicationStatus
-        from app.services import resume_service, cover_letter_service, application_service
         from app.security.encryption import decrypt
+        from app.services import (
+            application_service,
+            cover_letter_service,
+            resume_service,
+        )
+        from app.tenant_models.application import ApplicationStatus, JobApplication
+        from app.tenant_models.job import MatchedJob
+        from app.tenant_models.profile import UserPreferences
 
         async with AsyncSessionLocal() as shared_db:
             # Tenant session

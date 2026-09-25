@@ -10,7 +10,11 @@ from hashlib import sha256
 import pytest
 
 from app.compliance import consent_store
-from app.compliance.consent_store import CONSENT_TEXT, CURRENT_CONSENT_VERSION, record_consent
+from app.compliance.consent_store import (
+    CONSENT_TEXT,
+    CURRENT_CONSENT_VERSION,
+    record_consent,
+)
 from app.compliance.dpdpa import ConsentRecord
 
 
