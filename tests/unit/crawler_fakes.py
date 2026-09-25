@@ -115,7 +115,7 @@ class FakePage:
         v = self.selectors.get(sel, [])
         return v if isinstance(v, list) else [v]
 
-    async def click(self, sel: str) -> None:
+    async def click(self, sel: str, **kwargs: Any) -> None:
         self.clicked.append(sel)
 
     async def type(self, sel: str, char: str, delay: int = 0) -> None:
@@ -146,7 +146,7 @@ class ClickNavPage(FakePage):
         super().__init__(**kwargs)
         self._url_after_click = url_after_click
 
-    async def click(self, sel: str) -> None:
+    async def click(self, sel: str, **kwargs: Any) -> None:
         await super().click(sel)
         self.url = self._url_after_click
 

@@ -48,8 +48,8 @@ class MonsterCrawler(BaseCrawler):
             logger.error("monster.login_error", error=str(exc))
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.warning("monster.page_close_failed", error=str(close_exc))
             return False
 
     async def search_jobs(

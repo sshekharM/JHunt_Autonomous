@@ -147,17 +147,21 @@ async def test_clear_session_deletes_redis_key_and_pooled_context(fake_redis):
 
 
 @pytest.mark.asyncio
-async def test_clear_session_swallows_context_close_failure_and_continues(fake_redis):
-    """Pins the current control flow: a failure closing the pooled context
-    must not stop clear_session from removing the pool entry."""
+async def test_clear_session_logs_and_continues_when_context_close_fails(fake_redis):
+    """A failure closing the pooled context must not stop clear_session from
+    removing the pool entry, and must be logged rather than discarded."""
     context = MagicMock()
     context.close = AsyncMock(side_effect=RuntimeError("already gone"))
     session_manager._context_pool["naukri"] = context
 
-    with patch("app.crawlers.session_manager.audit"):
+    with patch("app.crawlers.session_manager.audit"), \
+            patch("app.crawlers.session_manager.logger") as mock_logger:
         await session_manager.clear_session("naukri")
 
     assert "naukri" not in session_manager._context_pool
+    mock_logger.warning.assert_called_once_with(
+        "session_manager.context_close_failed", portal="naukri", error="already gone"
+    )
 
 
 @pytest.mark.asyncio
@@ -229,14 +233,18 @@ async def test_shutdown_closes_all_contexts_browser_and_playwright():
 
 
 @pytest.mark.asyncio
-async def test_shutdown_swallows_context_close_failure_and_continues():
-    """Pins the current control flow: a failure closing one pooled context
-    must not stop shutdown from clearing the pool / stopping the browser."""
+async def test_shutdown_logs_and_continues_when_a_context_close_fails():
+    """A failure closing one pooled context must not stop shutdown from
+    clearing the pool, and must be logged rather than discarded."""
     ctx = MagicMock(close=AsyncMock(side_effect=RuntimeError("boom")))
     session_manager._context_pool = {"naukri": ctx}
     session_manager._browser = None
     session_manager._playwright = None
 
-    await session_manager.shutdown()
+    with patch("app.crawlers.session_manager.logger") as mock_logger:
+        await session_manager.shutdown()
 
     assert session_manager._context_pool == {}
+    mock_logger.warning.assert_called_once_with(
+        "session_manager.context_close_failed", error="boom"
+    )

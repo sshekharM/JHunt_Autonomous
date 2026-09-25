@@ -53,7 +53,7 @@ async def test_login_failure_when_still_on_login_url():
 
 
 @pytest.mark.asyncio
-async def test_login_returns_false_and_swallows_close_error_on_exception():
+async def test_login_logs_and_returns_false_when_close_fails_on_exception():
     class _BoomOnClose(FakePage):
         async def close(self):
             raise RuntimeError("already closed")
@@ -61,9 +61,13 @@ async def test_login_returns_false_and_swallows_close_error_on_exception():
     page = _BoomOnClose(raise_on_goto=RuntimeError("net down"))
     context = FakeContext(pages_to_return=[page])
 
-    ok = await MonsterCrawler().login(context)
+    with patch("app.crawlers.monster.logger") as mock_logger:
+        ok = await MonsterCrawler().login(context)
 
     assert ok is False
+    mock_logger.warning.assert_called_once_with(
+        "monster.page_close_failed", error="already closed"
+    )
 
 
 @pytest.mark.asyncio

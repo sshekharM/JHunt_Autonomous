@@ -39,8 +39,8 @@ class NaukriCrawler(BaseCrawler):
             try:
                 await page.click("button#onetrust-accept-btn-handler", timeout=3000)
                 await micro_delay()
-            except Exception:
-                pass
+            except Exception as banner_exc:
+                logger.debug("naukri.cookie_banner_not_present", error=str(banner_exc))
 
             await human_type(page, "input#usernameField", settings.naukri_system_email)
             await human_type(page, "input#passwordField", settings.naukri_system_password)
@@ -65,8 +65,8 @@ class NaukriCrawler(BaseCrawler):
             audit("crawler.login_failed", details={"portal": "naukri"}, error=exc)
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.warning("naukri.page_close_failed", error=str(close_exc))
             return False
 
     async def search_jobs(

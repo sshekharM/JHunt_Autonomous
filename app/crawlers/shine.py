@@ -48,8 +48,8 @@ class ShineCrawler(BaseCrawler):
             logger.error("shine.login_error", error=str(exc))
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.warning("shine.page_close_failed", error=str(close_exc))
             return False
 
     async def search_jobs(

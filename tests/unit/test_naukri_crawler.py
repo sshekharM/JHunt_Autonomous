@@ -55,12 +55,26 @@ async def test_login_success_when_url_leaves_login():
 
 
 @pytest.mark.asyncio
-async def test_login_continues_when_cookie_banner_absent():
-    """Pins the swallowed cookie-banner-click exception: login still proceeds."""
-    page = ClickNavPage(url_after_click="https://www.naukri.com/mnjuser/homepage")
+async def test_login_logs_and_continues_when_cookie_banner_click_fails():
+    """The cookie-banner click failure must not abort login, and must be
+    logged rather than discarded."""
+
+    class _BannerFailsPage(ClickNavPage):
+        async def click(self, sel, **kwargs):
+            if sel == "button#onetrust-accept-btn-handler":
+                raise RuntimeError("banner not present")
+            await super().click(sel)
+
+    page = _BannerFailsPage(url_after_click="https://www.naukri.com/mnjuser/homepage")
     context = FakeContext(pages_to_return=[page])
-    ok = await NaukriCrawler().login(context)
+
+    with patch("app.crawlers.naukri.logger") as mock_logger:
+        ok = await NaukriCrawler().login(context)
+
     assert ok is True
+    mock_logger.debug.assert_called_once_with(
+        "naukri.cookie_banner_not_present", error="banner not present"
+    )
 
 
 @pytest.mark.asyncio
@@ -72,7 +86,7 @@ async def test_login_failure_when_still_on_login_url():
 
 
 @pytest.mark.asyncio
-async def test_login_returns_false_and_swallows_close_error_on_exception():
+async def test_login_logs_and_returns_false_when_close_fails_on_exception():
     class _BoomOnClose(FakePage):
         async def close(self):
             raise RuntimeError("already closed")
@@ -80,9 +94,13 @@ async def test_login_returns_false_and_swallows_close_error_on_exception():
     page = _BoomOnClose(raise_on_goto=RuntimeError("net down"))
     context = FakeContext(pages_to_return=[page])
 
-    ok = await NaukriCrawler().login(context)
+    with patch("app.crawlers.naukri.logger") as mock_logger:
+        ok = await NaukriCrawler().login(context)
 
     assert ok is False
+    mock_logger.warning.assert_called_once_with(
+        "naukri.page_close_failed", error="already closed"
+    )
 
 
 @pytest.mark.asyncio

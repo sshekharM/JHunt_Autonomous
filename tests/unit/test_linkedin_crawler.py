@@ -42,11 +42,38 @@ async def test_login_success_when_redirected_to_feed():
 
 
 @pytest.mark.asyncio
-async def test_login_returns_false_on_checkpoint_challenge():
-    page = ClickNavPage(url_after_click="https://www.linkedin.com/checkpoint/challenge")
+async def test_login_success_when_only_mynetwork_in_url():
+    """Isolates each `or` in the feed/mynetwork/jobs check: only 'mynetwork'
+    present still means success, whichever `or` a mutant flips to `and`."""
+    page = ClickNavPage(url_after_click="https://www.linkedin.com/mynetwork/invitations")
+    context = FakeContext(pages_to_return=[page])
+    ok = await LinkedInCrawler().login(context)
+    assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_login_audits_challenge_on_checkpoint_only(_patched_helpers):
+    """Isolates the checkpoint/challenge `or`: 'checkpoint' alone must still
+    be treated as a challenge (not the generic login-failed branch, which
+    also returns False), whichever side a mutant flips to `and`."""
+    page = ClickNavPage(url_after_click="https://www.linkedin.com/checkpoint/verify")
     context = FakeContext(pages_to_return=[page])
     ok = await LinkedInCrawler().login(context)
     assert ok is False
+    _patched_helpers.assert_called_once_with(
+        "crawler.login_challenge", details={"portal": "linkedin", "url": page.url}
+    )
+
+
+@pytest.mark.asyncio
+async def test_login_audits_challenge_on_challenge_only(_patched_helpers):
+    page = ClickNavPage(url_after_click="https://www.linkedin.com/challenge/verify")
+    context = FakeContext(pages_to_return=[page])
+    ok = await LinkedInCrawler().login(context)
+    assert ok is False
+    _patched_helpers.assert_called_once_with(
+        "crawler.login_challenge", details={"portal": "linkedin", "url": page.url}
+    )
 
 
 @pytest.mark.asyncio
@@ -58,7 +85,7 @@ async def test_login_returns_false_when_url_unrecognised():
 
 
 @pytest.mark.asyncio
-async def test_login_returns_false_and_swallows_close_error_on_exception():
+async def test_login_logs_and_returns_false_when_close_fails_on_exception():
     class _BoomOnClose(FakePage):
         async def close(self):
             raise RuntimeError("already closed")
@@ -66,9 +93,13 @@ async def test_login_returns_false_and_swallows_close_error_on_exception():
     page = _BoomOnClose(raise_on_goto=RuntimeError("net down"))
     context = FakeContext(pages_to_return=[page])
 
-    ok = await LinkedInCrawler().login(context)
+    with patch("app.crawlers.linkedin.logger") as mock_logger:
+        ok = await LinkedInCrawler().login(context)
 
     assert ok is False
+    mock_logger.warning.assert_called_once_with(
+        "linkedin.page_close_failed", error="already closed"
+    )
 
 
 @pytest.mark.asyncio
@@ -135,6 +166,30 @@ async def test_parse_job_card_returns_none_when_link_missing():
         "h3.base-search-card__title, a.job-card-list__title": FakeElement(text="t"),
     })
     assert await crawler._parse_job_card(card, page=None) is None
+
+
+@pytest.mark.asyncio
+async def test_parse_job_card_returns_none_when_title_missing_without_side_effects():
+    """Isolates the `not title_el or not link_el` guard: pins that a missing
+    title_el short-circuits *before* querying the easy-apply badge, so a
+    mutant flipping this `or` to `and` (which would fall through and only
+    crash later on title_el.inner_text()) is caught by the missing query,
+    not merely by both paths returning None."""
+
+    class _TrackingCard(FakeElement):
+        async def query_selector(self, sel):
+            self.queried_selectors.append(sel)
+            return await super().query_selector(sel)
+
+    card = _TrackingCard(children={
+        "a.base-card__full-link, a.job-card-list__title": FakeElement(attrs={"href": "/jobs/view/1"}),
+    })
+    card.queried_selectors = []
+
+    result = await LinkedInCrawler()._parse_job_card(card, page=None)
+
+    assert result is None
+    assert "span.job-search-card__easy-apply-label" not in card.queried_selectors
 
 
 @pytest.mark.asyncio

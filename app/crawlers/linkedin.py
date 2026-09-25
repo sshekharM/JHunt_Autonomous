@@ -62,8 +62,8 @@ class LinkedInCrawler(BaseCrawler):
             audit("crawler.login_failed", details={"portal": "linkedin"}, error=exc)
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.warning("linkedin.page_close_failed", error=str(close_exc))
             return False
 
     async def search_jobs(

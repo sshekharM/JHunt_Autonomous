@@ -113,8 +113,8 @@ async def clear_session(portal: str) -> None:
     if portal in _context_pool:
         try:
             await _context_pool[portal].close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("session_manager.context_close_failed", portal=portal, error=str(exc))
         del _context_pool[portal]
     audit("crawler.session_cleared", details={"portal": portal})
 
@@ -166,8 +166,8 @@ async def shutdown() -> None:
     for ctx in _context_pool.values():
         try:
             await ctx.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("session_manager.context_close_failed", error=str(exc))
     _context_pool.clear()
     if _browser:
         await _browser.close()
