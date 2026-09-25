@@ -45,10 +45,12 @@ makes this worse (`specs/brownfield/risk-map.md` R17).
 
 ## Out of scope
 
-- **Whether every login should require a TOTP code is still a product
-  decision.** Today, a user who has verified TOTP once is never asked for a
-  code again. OAuth alone gets them a session. This change does not alter that
-  policy. It only closes the unauthenticated path to the verify endpoint.
+- **Asking for a TOTP code at every login.** Decided by the user on
+  2026-09-25: returning users are **not** asked for a TOTP code at login. A
+  user who has verified TOTP once gets a session from OAuth alone. TOTP is
+  checked only at enrolment, through the pending-2FA verify step. This change
+  does not alter that policy. It only closes the unauthenticated path to the
+  verify endpoint.
 - Rotating or hiding the TOTP secret and QR code in the callback response
   (SEC-004 in `specs/reviews/security-review.md`).
 - Frontend changes. The repo has no web frontend: no HTML or JS is tracked, and
@@ -80,8 +82,9 @@ AC coverage:
   - AC8: test_pending_token_cannot_be_replayed_once_totp_is_verified,
     test_non_admin_tokens_are_401_before_lookup[purpose-bound]
 
-Follow-ups raised in review, not done here:
-- `code` is a query parameter, so TOTP codes show up in access logs. Move it
-  to a request body.
-- TOTP attempts are rate-limited only per IP. There is no lockout per account
-  and no cache of codes already used.
+Follow-ups raised in review:
+- `code` was a query parameter, so TOTP codes showed up in access logs. Done:
+  the code now goes in the request body (commit b20badc).
+- TOTP attempts were rate-limited only per IP, with no lockout per account and
+  no check for codes already used. Done in CHG-006
+  (`specs/stories/CHG-006-totp-account-lockout.md`).

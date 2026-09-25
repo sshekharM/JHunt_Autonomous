@@ -222,9 +222,17 @@ the cookie is missing, expired, or has the wrong purpose. It clears the cookie
 on success. `get_current_user` now refuses any JWT that has a `purpose` claim,
 so a pending token cannot be used as a session.
 
-**Still open (product decision):** a user who has verified TOTP once is never
-asked for a code at later logins. OAuth alone gets them a session. Whether to
-require TOTP at every login has not been decided.
+Follow-ups: the code now goes in the request body, not the URL. CHG-006 adds
+a per-account lockout: after `totp_max_failures` (5) bad codes in a row, TOTP
+verify for that account returns 429 for `totp_lockout_minutes` (15) and writes
+`auth.totp_locked`. A time step that was already accepted is refused as a
+replay. The user row is read `FOR UPDATE`, so parallel attempts cannot get
+past the count. The counters are on `users` (migration 0005).
+
+**Decided (2026-09-25, user):** returning users are **not** asked for a TOTP
+code at login. A user who has verified TOTP once gets a session from OAuth
+alone, so TOTP protects enrolment only. This is accepted residual risk: a
+compromised OAuth account is enough to sign in.
 
 ### R18 — Notifications WebSocket had no authentication (fixed, CHG-004)
 `/api/notifications/ws/{user_id}` (`app/routers/notifications.py`) accepted

@@ -1,4 +1,7 @@
+from datetime import datetime
+
 import pyotp
+from pyotp.utils import strings_equal
 import qrcode
 import io
 import base64
@@ -28,3 +31,12 @@ def verify_totp(secret: str, code: str) -> bool:
     """Verify a TOTP code with a 30-second window tolerance."""
     totp = pyotp.TOTP(secret)
     return totp.verify(code, valid_window=1)
+
+
+def matched_totp_step(secret: str, code: str, for_time: datetime) -> int | None:
+    """The time step a code was made for, within one step either side of for_time; else None."""
+    totp = pyotp.TOTP(secret)
+    for offset in (-1, 0, 1):
+        if strings_equal(code, totp.at(for_time, offset)):
+            return totp.timecode(for_time) + offset
+    return None
