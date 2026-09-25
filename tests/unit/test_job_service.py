@@ -48,6 +48,7 @@ async def test_queries_the_validated_tenant_jobs_table(call):
 
 async def _stored_upsert(raw: dict):
     from sqlalchemy.dialects import postgresql
+
     from app.services.job_service import store_jobs
     result = MagicMock(fetchone=MagicMock(return_value=(True,)))
     db = MagicMock(execute=AsyncMock(return_value=result), commit=AsyncMock())

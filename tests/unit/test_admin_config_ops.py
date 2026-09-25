@@ -64,7 +64,7 @@ class _RecordingDB:
 
     async def execute(self, stmt):
         self.statements.append(stmt)
-        return SimpleNamespace(scalar=lambda: 0, scalars=lambda: SimpleNamespace(all=lambda: []))
+        return SimpleNamespace(scalar=lambda: 0, scalars=lambda: SimpleNamespace(all=list))
 
 
 def _sql(stmt) -> str:

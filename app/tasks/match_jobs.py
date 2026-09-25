@@ -6,9 +6,11 @@ Triggers notifications for high-match jobs.
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from app.tasks.celery_app import celery_app
-from app.security.audit_log import audit
+
 import structlog
+
+from app.security.audit_log import audit
+from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.match_jobs")
 
@@ -17,14 +19,14 @@ DESCRIPTION_SNIPPET_LEN = 500
 
 
 async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
-    from app.database import AsyncSessionLocal, tenant_session
-    from app.services.job_service import get_unmatched_jobs
-    from app.ml.matcher import compute_match
-    from app.ml.feedback import compute_user_score_adjustment
     from sqlalchemy import select
 
-    from app.tenant_models.skill import UserSkill
+    from app.database import AsyncSessionLocal, tenant_session
+    from app.ml.feedback import compute_user_score_adjustment
+    from app.ml.matcher import compute_match
+    from app.services.job_service import get_unmatched_jobs
     from app.tenant_models.job import MatchedJob
+    from app.tenant_models.skill import UserSkill
 
     matched_count = 0
     high_match_count = 0
@@ -103,7 +105,7 @@ async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
 
     if high_match_jobs:
         from app.tasks.notify import send_match_notification
-        send_match_notification.delay(user_id, high_match_jobs)
+        send_match_notification.delay(user_id, schema_name, high_match_jobs)
 
     return {
         "user_id": user_id,
@@ -113,9 +115,10 @@ async def _run_match_for_user(user_id: str, schema_name: str) -> dict:
 
 
 async def _run_match_all_users() -> dict:
+    from sqlalchemy import select
+
     from app.database import AsyncSessionLocal
     from app.models.user import User
-    from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(

@@ -2,8 +2,10 @@
 Base framework for direct company career page crawlers.
 """
 from abc import ABC, abstractmethod
-from app.crawlers.base import BaseCrawler, RawJob
+
 import structlog
+
+from app.crawlers.base import BaseCrawler, RawJob
 
 logger = structlog.get_logger("crawlers.company")
 

@@ -1,11 +1,10 @@
 """Prerequisites check page."""
-import sys
-import tkinter as tk
-from tkinter import ttk
 import threading
+import tkinter as tk
 import webbrowser
-from .base import WizardPage
+
 from ..core import prereq_checker
+from .base import WizardPage
 
 DOCKER_INSTALL_URL = "https://docs.docker.com/desktop/install/windows-install/"
 

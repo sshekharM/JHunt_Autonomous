@@ -1,6 +1,8 @@
 """Database configuration page."""
+import contextlib
 import tkinter as tk
 from tkinter import ttk
+
 from .base import WizardPage
 
 
@@ -89,10 +91,9 @@ class DatabasePage(WizardPage):
         state = "normal" if mode == "external" else "disabled"
         for child in self._ext_frame.winfo_children():
             for w in child.winfo_children():
-                try:
+                # Labels and frames have no "state" option; Tk raises TclError for them.
+                with contextlib.suppress(tk.TclError):
                     w.config(state=state)
-                except Exception:
-                    pass
 
     def _test_connection(self):
         v = self._ext_vars

@@ -3,6 +3,7 @@ Unit tests for app.ml.matcher.compute_match().
 No database or network I/O — pure function tests.
 """
 import pytest
+
 from app.ml.matcher import compute_match, meets_threshold
 
 

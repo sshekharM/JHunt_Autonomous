@@ -1,9 +1,20 @@
+import enum
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, BigInteger, DateTime, Enum as SAEnum, Integer, LargeBinary, UniqueConstraint
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Integer,
+    LargeBinary,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database import Base
-import enum
 
 
 class OAuthProvider(str, enum.Enum):

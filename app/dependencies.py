@@ -1,15 +1,16 @@
-from fastapi import Depends, HTTPException, Cookie, status
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy import select
-from typing import Optional
-from app.database import get_db, get_tenant_db
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.admin import AdminRole, AdminUser
 from app.models.user import User
-from app.models.admin import AdminUser, AdminRole
 from app.services.auth_service import decode_access_token, session_user_id
 
 
 async def get_current_user(
-    access_token: Optional[str] = Cookie(default=None),
+    access_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     if not access_token:
@@ -30,7 +31,7 @@ async def get_current_user(
 
 
 async def get_current_admin(
-    access_token: Optional[str] = Cookie(default=None),
+    access_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> AdminUser:
     if not access_token:

@@ -1,7 +1,8 @@
 """LLM configuration page."""
 import tkinter as tk
-from tkinter import ttk
 import webbrowser
+from tkinter import ttk
+
 from .base import WizardPage
 
 OLLAMA_MODELS = ["llama3", "gemma2", "mistral", "codellama"]

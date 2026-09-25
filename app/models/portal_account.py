@@ -1,9 +1,12 @@
+import enum
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, DateTime, LargeBinary, Enum as SAEnum, Text
+
+from sqlalchemy import Boolean, DateTime, LargeBinary, String, Text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database import Base
-import enum
 
 
 class PortalName(str, enum.Enum):

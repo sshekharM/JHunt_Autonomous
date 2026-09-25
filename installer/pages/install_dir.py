@@ -1,9 +1,10 @@
 """Installation directory selection page."""
 import os
-import sys
 import shutil
+import sys
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import filedialog, ttk
+
 from .base import WizardPage
 
 

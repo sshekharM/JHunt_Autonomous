@@ -1,6 +1,6 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
-from typing import List, Literal
 
 
 class Settings(BaseSettings):
@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     totp_lockout_minutes: int = 15
 
     @property
-    def allowed_ip_list(self) -> List[str]:
+    def allowed_ip_list(self) -> list[str]:
         """Exact-match admin IP allowlist; blank entries dropped. Empty = deny all."""
         return [ip.strip() for ip in self.allowed_ips.split(",") if ip.strip()]
 

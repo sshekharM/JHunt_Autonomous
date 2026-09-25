@@ -28,9 +28,15 @@ def _alembic(*args: str) -> None:
 
 
 def _shared_metadata():
-    from app.database import Base
-    from app.models import user, admin, portal_account, job, skill_taxonomy  # noqa: F401
     from app.compliance.dpdpa import ConsentRecord  # noqa: F401
+    from app.database import Base
+    from app.models import (  # noqa: F401
+        admin,
+        job,
+        portal_account,
+        skill_taxonomy,
+        user,
+    )
     return Base.metadata
 
 
@@ -46,6 +52,7 @@ def _diff(sync_conn):
 
 async def _drift():
     from sqlalchemy.ext.asyncio import create_async_engine
+
     from app.config import settings
     engine = create_async_engine(settings.database_url)
     try:

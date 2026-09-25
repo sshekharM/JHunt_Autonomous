@@ -11,7 +11,7 @@ import os
 import uuid
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_DB_TESTS") != "1",

@@ -6,15 +6,19 @@ User's personal session used for Easy Apply.
 Anti-ban measures: strict rate limits, no bulk actions, human-like behaviour.
 """
 import re
-from typing import Optional
+
+import structlog
 from playwright.async_api import BrowserContext
-from app.crawlers.base import BaseCrawler, RawJob, ApplicationReceipt
+
 from app.crawlers.anti_detection import (
-    human_delay, human_type, random_scroll, micro_delay
+    human_delay,
+    human_type,
+    micro_delay,
+    random_scroll,
 )
+from app.crawlers.base import ApplicationReceipt, BaseCrawler, RawJob
 from app.crawlers.session_manager import save_session_cookies
 from app.security.audit_log import audit
-import structlog
 
 logger = structlog.get_logger("crawlers.linkedin")
 
@@ -62,8 +66,8 @@ class LinkedInCrawler(BaseCrawler):
             audit("crawler.login_failed", details={"portal": "linkedin"}, error=exc)
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.warning("linkedin.page_close_failed", error=str(close_exc))
             return False
 
     async def search_jobs(
@@ -110,7 +114,7 @@ class LinkedInCrawler(BaseCrawler):
         finally:
             await page.close()
 
-    async def _parse_job_card(self, card, page) -> Optional[RawJob]:
+    async def _parse_job_card(self, card, page) -> RawJob | None:
         try:
             title_el = await card.query_selector("h3.base-search-card__title, a.job-card-list__title")
             company_el = await card.query_selector("h4.base-search-card__subtitle, a.job-card-container__company-name")
@@ -144,8 +148,8 @@ class LinkedInCrawler(BaseCrawler):
         context: BrowserContext,
         job: RawJob,
         user_profile: dict,
-        resume_path: Optional[str] = None,
-        cover_letter: Optional[str] = None,
+        resume_path: str | None = None,
+        cover_letter: str | None = None,
     ) -> ApplicationReceipt:
         """Apply via LinkedIn Easy Apply using the user's personal session."""
         if not job.is_easy_apply:
@@ -263,7 +267,7 @@ class LinkedInCrawler(BaseCrawler):
         finally:
             await page.close()
 
-    def _match_profile_field(self, label: str, profile: dict) -> Optional[str]:
+    def _match_profile_field(self, label: str, profile: dict) -> str | None:
         """Map a form field label to a user profile value."""
         label_lower = label.lower()
         if "notice" in label_lower:

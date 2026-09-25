@@ -3,14 +3,20 @@ Shine.com crawler.
 Uses httpx for job search and Playwright for login/apply.
 """
 import re
-from typing import Optional
+
 import httpx
+import structlog
 from bs4 import BeautifulSoup
 from playwright.async_api import BrowserContext
-from app.crawlers.base import BaseCrawler, RawJob, ApplicationReceipt
-from app.crawlers.anti_detection import human_delay, human_type, random_scroll, micro_delay
+
+from app.crawlers.anti_detection import (
+    human_delay,
+    human_type,
+    micro_delay,
+    random_scroll,
+)
+from app.crawlers.base import ApplicationReceipt, BaseCrawler, RawJob
 from app.security.audit_log import audit
-import structlog
 
 logger = structlog.get_logger("crawlers.shine")
 
@@ -48,8 +54,8 @@ class ShineCrawler(BaseCrawler):
             logger.error("shine.login_error", error=str(exc))
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.warning("shine.page_close_failed", error=str(close_exc))
             return False
 
     async def search_jobs(
@@ -131,8 +137,8 @@ class ShineCrawler(BaseCrawler):
         context: BrowserContext,
         job: RawJob,
         user_profile: dict,
-        resume_path: Optional[str] = None,
-        cover_letter: Optional[str] = None,
+        resume_path: str | None = None,
+        cover_letter: str | None = None,
     ) -> ApplicationReceipt:
         page = await context.new_page()
         try:

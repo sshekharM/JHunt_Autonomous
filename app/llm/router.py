@@ -1,5 +1,6 @@
 import structlog
-from app.llm import ollama_client, anthropic_client
+
+from app.llm import anthropic_client, ollama_client
 
 logger = structlog.get_logger("llm.router")
 

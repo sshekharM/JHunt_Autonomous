@@ -2,13 +2,13 @@
 Celery tasks for polling application statuses across portals.
 """
 import asyncio
-from app.services import notification_service
 
 import structlog
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal, get_tenant_db
 from app.models.user import User
+from app.services import notification_service
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger("tasks.status_check")
@@ -67,9 +67,9 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
     Calls the appropriate portal crawler and updates the FSM status.
     """
     async def _inner():
-        from app.tenant_models.application import JobApplication, ApplicationStatus
-        from app.services.application_service import transition_status
         from app.crawlers.session_manager import get_context
+        from app.services.application_service import transition_status
+        from app.tenant_models.application import ApplicationStatus, JobApplication
 
         async for tenant_db in get_tenant_db(schema_name):
             result = await tenant_db.execute(
@@ -129,8 +129,8 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
                         )
 
                         # Update ML feedback for meaningful outcomes
-                        from app.tenant_models.ml_feedback import OutcomeSignal
                         from app.ml.feedback import record_outcome
+                        from app.tenant_models.ml_feedback import OutcomeSignal
                         outcome_map = {
                             ApplicationStatus.interview_scheduled: OutcomeSignal.interview_scheduled,
                             ApplicationStatus.rejected: OutcomeSignal.rejected_by_recruiter,
@@ -147,8 +147,12 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
                                     tenant_db=tenant_db,
                                     user_id=user_id,
                                 )
-                            except Exception:
-                                pass
+                            except Exception as feedback_exc:
+                                logger.warning(
+                                    "status_check.feedback_error",
+                                    application_id=app.id,
+                                    error=str(feedback_exc),
+                                )
 
                         logger.info(
                             "status_check.updated",
@@ -183,8 +187,12 @@ def check_user_application_statuses(self, user_id: str, schema_name: str):
                                     tenant_db=tenant_db,
                                     note="portal returned 404 — assumed withdrawn",
                                 )
-                            except Exception:
-                                pass
+                            except Exception as transition_exc:
+                                logger.warning(
+                                    "status_check.withdrawal_transition_error",
+                                    application_id=app.id,
+                                    error=str(transition_exc),
+                                )
 
     try:
         _run(_inner())

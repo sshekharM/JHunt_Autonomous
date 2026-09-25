@@ -7,11 +7,11 @@ Output: match score (0.0–1.0) + explainability dict
 
 Phase 2 (sentence-transformers semantic similarity) is scaffolded below.
 """
+
+import numpy as np
+import structlog
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-from typing import Optional
-import structlog
 
 logger = structlog.get_logger("ml.matcher")
 
@@ -25,8 +25,8 @@ def _get_st_model():
         try:
             from sentence_transformers import SentenceTransformer
             _st_model = SentenceTransformer("all-MiniLM-L6-v2")
-        except ImportError:
-            pass
+        except ImportError as exc:
+            logger.info("matcher.semantic_model_unavailable", error=str(exc))
     return _st_model
 
 

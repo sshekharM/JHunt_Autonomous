@@ -32,6 +32,7 @@ def test_tenant_chain_lives_under_migrations_tenant():
 
 def test_tenant_chain_has_exactly_one_head():
     from alembic.script import ScriptDirectory
+
     from app.tenant_migrations import TENANT_SCRIPT_LOCATION, tenant_head_revision
     heads = ScriptDirectory(TENANT_SCRIPT_LOCATION).get_heads()
     assert heads == [tenant_head_revision()]

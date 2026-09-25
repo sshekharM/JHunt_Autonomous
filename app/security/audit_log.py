@@ -1,18 +1,19 @@
 import traceback
-import structlog
 from datetime import datetime, timezone
-from typing import Optional, Any
+from typing import Any
+
+import structlog
 
 logger = structlog.get_logger("audit")
 
 
 def audit(
     event: str,
-    user_id: Optional[str] = None,
-    admin_id: Optional[str] = None,
-    resource: Optional[str] = None,
-    details: Optional[dict[str, Any]] = None,
-    error: Optional[Exception] = None,
+    user_id: str | None = None,
+    admin_id: str | None = None,
+    resource: str | None = None,
+    details: dict[str, Any] | None = None,
+    error: Exception | None = None,
 ) -> None:
     log = logger.bind(
         event=event,

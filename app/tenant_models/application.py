@@ -1,9 +1,12 @@
+import enum
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Float, JSON, Text, Enum as SAEnum
+
+from sqlalchemy import DateTime, Float, String, Text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.tenant_models.profile import TenantBase
-import enum
 
 
 class ApplicationStatus(str, enum.Enum):

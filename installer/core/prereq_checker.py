@@ -1,10 +1,8 @@
 """Prerequisite checks for jH_ANS installer."""
+import shutil
 import socket
 import subprocess
-import shutil
-import os
 import sys
-
 
 REQUIRED_PORTS = [
     (5432, "PostgreSQL"),

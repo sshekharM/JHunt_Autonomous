@@ -6,9 +6,9 @@ Separation of concerns:
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
-from playwright.async_api import BrowserContext
+
 import structlog
+from playwright.async_api import BrowserContext
 
 logger = structlog.get_logger("crawlers.base")
 
@@ -26,7 +26,7 @@ class RawJob:
     skills_required: list[str] = field(default_factory=list)
     salary_range: str = ""
     experience_required: str = ""
-    posted_at: Optional[str] = None
+    posted_at: str | None = None
     is_easy_apply: bool = False
     extra: dict = field(default_factory=dict)
 
@@ -35,8 +35,8 @@ class RawJob:
 class ApplicationReceipt:
     """Result of an apply() call."""
     success: bool
-    portal_application_id: Optional[str] = None
-    failure_reason: Optional[str] = None
+    portal_application_id: str | None = None
+    failure_reason: str | None = None
     requires_manual: bool = False
     missing_fields: list[str] = field(default_factory=list)
 
@@ -77,8 +77,8 @@ class BaseCrawler(ABC):
         context: BrowserContext,
         job: RawJob,
         user_profile: dict,
-        resume_path: Optional[str] = None,
-        cover_letter: Optional[str] = None,
+        resume_path: str | None = None,
+        cover_letter: str | None = None,
     ) -> ApplicationReceipt:
         """Apply to a job using the user's personal portal session."""
 

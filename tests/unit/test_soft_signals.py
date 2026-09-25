@@ -1,4 +1,5 @@
 import pytest
+
 from app.ml.taxonomy_discovery import SoftSignals, activate_soft_signals
 
 

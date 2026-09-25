@@ -2,14 +2,13 @@
 Unit tests for application_service.
 Covers: FSM valid/invalid transitions, daily cap, paused user.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.tenant_models.application import ApplicationStatus
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -92,7 +91,10 @@ async def test_invalid_transition_raises(from_status, to_status):
 @pytest.mark.asyncio
 async def test_daily_cap_skips_apply():
     """When applied_today >= apply_cap_daily, no applications should be dispatched."""
-    from app.tenant_models.profile import UserPreferences, LLMChoice, NotificationPlatform
+    from app.tenant_models.profile import (
+        LLMChoice,
+        UserPreferences,
+    )
 
     prefs = MagicMock(spec=UserPreferences)
     prefs.auto_apply_enabled = True

@@ -1,7 +1,7 @@
 """Register jH_ANS as an auto-start service on Windows, Linux, and macOS."""
 import os
-import sys
 import subprocess
+import sys
 import textwrap
 
 

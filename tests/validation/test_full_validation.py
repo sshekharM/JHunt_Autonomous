@@ -7,7 +7,6 @@ Run with: python -m pytest tests/validation/test_full_validation.py -v --tb=shor
 # Bootstrap env vars before any app import (mirrors unit conftest pattern)
 # ---------------------------------------------------------------------------
 import os
-import base64
 
 from cryptography.fernet import Fernet as _Fernet
 
@@ -18,13 +17,9 @@ os.environ.setdefault("MINIO_SECRET_KEY", "testminiocredential")
 os.environ.setdefault("FERNET_KEY", _test_fernet_key)
 
 # ---------------------------------------------------------------------------
-import asyncio
-import hashlib
-import html
 import re
 import uuid
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from bs4 import BeautifulSoup
@@ -37,7 +32,7 @@ class TestEncryption:
     """Fernet encrypt/decrypt round-trips for PII field types."""
 
     def setup_method(self):
-        from app.security.encryption import encrypt, decrypt
+        from app.security.encryption import decrypt, encrypt
         self.encrypt = encrypt
         self.decrypt = decrypt
 
@@ -160,7 +155,9 @@ class TestTOTP:
         assert self.verify(secret, "abcdef") is False
 
     def test_expired_code_fails(self):
-        import pyotp, time
+        import time
+
+        import pyotp
         secret = self.generate()
         # Generate a code for a timestamp 60 seconds ago (window=1 allows ±30s)
         past = int(time.time()) - 60
@@ -266,7 +263,7 @@ class TestExplainer:
     """format_explanation() and dashboard_explainability() correctness."""
 
     def setup_method(self):
-        from app.ml.explainer import format_explanation, dashboard_explainability
+        from app.ml.explainer import dashboard_explainability, format_explanation
         self.fmt = format_explanation
         self.dash = dashboard_explainability
 
@@ -718,7 +715,7 @@ class TestBillingGates:
 
     def test_all_gates_true_when_plan_not_enabled(self):
         """Pro plan is disabled by default — gates return True (no limits)."""
-        from app.billing.gates import can_use_portal, can_apply_today, can_use_llm_api
+        from app.billing.gates import can_apply_today, can_use_llm_api, can_use_portal
         from app.billing.plans import PLANS
         # Ensure pro is disabled
         PLANS["pro"].enabled = False
@@ -737,7 +734,7 @@ class TestBillingGates:
         PLANS["pro"].enabled = False
 
     def test_pro_can_apply_today_respects_limit(self):
-        from app.billing.gates import can_apply_today, activate_plan
+        from app.billing.gates import activate_plan, can_apply_today
         from app.billing.plans import PLANS
         PLANS["pro"].enabled = False
         activate_plan("pro")
@@ -793,7 +790,7 @@ class TestDeletionModes:
 
     @pytest.mark.asyncio
     async def test_hard_delete_drops_schema(self):
-        from app.compliance.deletion import execute_deletion, DeletionMode
+        from app.compliance.deletion import DeletionMode, execute_deletion
         user = self._make_user()
         db = self._make_db()
         await execute_deletion(user, DeletionMode.hard_delete, db)
@@ -803,7 +800,7 @@ class TestDeletionModes:
 
     @pytest.mark.asyncio
     async def test_hard_delete_sql_contains_cascade(self):
-        from app.compliance.deletion import execute_deletion, DeletionMode
+        from app.compliance.deletion import DeletionMode, execute_deletion
         user = self._make_user()
         db = self._make_db()
         await execute_deletion(user, DeletionMode.hard_delete, db)
@@ -812,7 +809,7 @@ class TestDeletionModes:
 
     @pytest.mark.asyncio
     async def test_soft_delete_sets_inactive(self):
-        from app.compliance.deletion import execute_deletion, DeletionMode
+        from app.compliance.deletion import DeletionMode, execute_deletion
         user = self._make_user()
         db = self._make_db()
         await execute_deletion(user, DeletionMode.soft_delete, db)
@@ -820,7 +817,7 @@ class TestDeletionModes:
 
     @pytest.mark.asyncio
     async def test_soft_delete_returns_summary(self):
-        from app.compliance.deletion import execute_deletion, DeletionMode
+        from app.compliance.deletion import DeletionMode, execute_deletion
         user = self._make_user()
         db = self._make_db()
         result = await execute_deletion(user, DeletionMode.soft_delete, db)
@@ -829,7 +826,7 @@ class TestDeletionModes:
 
     @pytest.mark.asyncio
     async def test_anonymise_drops_pii_tables(self):
-        from app.compliance.deletion import execute_deletion, DeletionMode
+        from app.compliance.deletion import DeletionMode, execute_deletion
         user = self._make_user()
         db = self._make_db()
         await execute_deletion(user, DeletionMode.anonymise, db)
@@ -1048,7 +1045,7 @@ class TestNotificationService:
         return mock_db
 
     def _make_tenant_db_with_prefs(self, platform=None, telegram_chat_id=None, discord_channel_id=None):
-        from app.tenant_models.profile import UserPreferences, NotificationPlatform
+        from app.tenant_models.profile import NotificationPlatform, UserPreferences
 
         mock_prefs = MagicMock(spec=UserPreferences)
         if platform == "telegram":
@@ -1388,8 +1385,8 @@ class TestEndToEndAutonomousLoop:
     """Core autonomous loop: crawl → match → rank → filter → explain."""
 
     def setup_method(self):
-        from app.ml.matcher import compute_match, meets_threshold
         from app.ml.explainer import dashboard_explainability
+        from app.ml.matcher import compute_match, meets_threshold
         self.compute = compute_match
         self.meets = meets_threshold
         self.explain = dashboard_explainability

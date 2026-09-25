@@ -2,8 +2,8 @@
 Feature gate checks — always returns True (no limits) until billing is activated.
 Replace the body of each check when tiers go live.
 """
-from app.models.user import User, UserTier
 from app.billing.plans import PLANS
+from app.models.user import User
 
 
 def can_use_portal(user: User, portal_count: int) -> bool:

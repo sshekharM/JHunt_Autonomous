@@ -67,6 +67,7 @@ async def test_migrated_schema_matches_tenant_models(schema):
     """No drift: the tenant migration chain must build exactly what the models declare."""
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
+
     from app.database import engine, provision_user_schema, search_path_sql
     from app.tenant_migrations import tenant_metadata
     await provision_user_schema(schema)

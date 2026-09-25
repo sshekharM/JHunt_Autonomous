@@ -4,12 +4,12 @@ Extracts candidate skill terms not yet in the taxonomy.
 Queues them for admin review before they are added.
 """
 import re
-import json
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
-from app.models.skill_taxonomy import SkillTaxonomy, TaxonomyStatus, TaxonomySource
+
 import structlog
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.skill_taxonomy import SkillTaxonomy, TaxonomySource, TaxonomyStatus
 
 logger = structlog.get_logger("ml.taxonomy_discovery")
 
@@ -68,8 +68,12 @@ async def queue_discovered_skills(
         if llm_suggest_category_fn:
             try:
                 suggested_category = await llm_suggest_category_fn(skill)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "taxonomy_discovery.category_suggestion_failed",
+                    skill=skill,
+                    error=str(exc),
+                )
 
         new_skill = SkillTaxonomy(
             skill_name=skill,

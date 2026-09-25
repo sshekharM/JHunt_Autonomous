@@ -3,14 +3,15 @@ Job service — shared schema operations for crawled jobs.
 Deduplication key: (portal, portal_job_id) via INSERT ON CONFLICT DO UPDATE.
 """
 from datetime import datetime, timezone
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+
+import structlog
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import validate_schema_name
 from app.models.job import Job
 from app.security.audit_log import audit
-import structlog
 
 logger = structlog.get_logger("services.job_service")
 

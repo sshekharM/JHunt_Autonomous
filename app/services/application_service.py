@@ -2,10 +2,9 @@
 Core application orchestration: apply, FSM transitions, HITL queuing.
 """
 from datetime import datetime, timezone
-from typing import Optional
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crawlers.base import ApplicationReceipt, BaseCrawler
@@ -19,7 +18,6 @@ from app.tenant_models.application import (
     ApplicationStatusLog,
     JobApplication,
 )
-from app.tenant_models.ml_feedback import OutcomeSignal
 from app.tenant_models.screening_qa import MissingInfoLog
 
 logger = structlog.get_logger("services.application")
@@ -71,7 +69,7 @@ async def apply_to_job(
     shared_db: AsyncSession,
     resume_path: str,
     cover_letter: str,
-    job_record: Optional[object] = None,
+    job_record: object | None = None,
 ) -> ApplicationReceipt:
     """
     Full apply flow:
@@ -186,7 +184,7 @@ async def transition_status(
     application_id: str,
     new_status: ApplicationStatus,
     tenant_db: AsyncSession,
-    note: Optional[str] = None,
+    note: str | None = None,
 ) -> None:
     """FSM-guarded status transition with audit log entry."""
     result = await tenant_db.execute(

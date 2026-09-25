@@ -1,24 +1,30 @@
 import asyncio
-import json
 from contextlib import suppress
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from sqlalchemy import text
-from typing import Dict, List, Optional
-from app.database import get_db, get_tenant_db
-from app.models.user import User
+
+from app.database import get_tenant_db
 from app.dependencies import get_current_user
+from app.models.user import User
 from app.services.auth_service import session_user_id
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 logger = structlog.get_logger("routers.notifications")
 
 # In-memory WebSocket connection registry per user
-_connections: Dict[str, List[WebSocket]] = {}
+_connections: dict[str, list[WebSocket]] = {}
 
 
-def _session_user(websocket: WebSocket) -> Optional[str]:
+def _session_user(websocket: WebSocket) -> str | None:
     """User id of the handshake's access_token session cookie, or None if absent/invalid."""
     token = websocket.cookies.get("access_token")
     if not token:

@@ -10,9 +10,9 @@ Requirements:
 The output will be at:
     installer/dist/jHANS_Setup.exe
 """
+import os
 import subprocess
 import sys
-import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -41,7 +41,7 @@ def main():
 
     if result.returncode == 0:
         dist_path = os.path.join(_HERE, "dist", "jHANS_Setup.exe")
-        print(f"\nBuild successful!")
+        print("\nBuild successful!")
         print(f"Output: {dist_path}")
     else:
         print(f"\nBuild FAILED (exit code {result.returncode})")

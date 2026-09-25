@@ -2,11 +2,12 @@
 Per-user ML feedback recording and automated model update.
 Stores outcome signals that influence future match scoring for that user.
 """
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
-from app.tenant_models.ml_feedback import MLFeedback, OutcomeSignal
-from app.security.audit_log import audit
 import structlog
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.security.audit_log import audit
+from app.tenant_models.ml_feedback import MLFeedback, OutcomeSignal
 
 logger = structlog.get_logger("ml.feedback")
 

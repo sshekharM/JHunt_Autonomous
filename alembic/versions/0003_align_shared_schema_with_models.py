@@ -14,8 +14,9 @@ The columns are NOT NULL with no default: there is no production data, and
 existing admin/consent rows could not be backfilled with meaningful values,
 so the upgrade fails loudly on a database that already has such rows.
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0003"
 down_revision = "0002"

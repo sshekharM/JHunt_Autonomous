@@ -1,5 +1,4 @@
 import tkinter as tk
-from tkinter import ttk
 from abc import ABC, abstractmethod
 
 
@@ -47,4 +46,3 @@ class WizardPage(tk.Frame, ABC):
 
     def on_show(self):
         """Called each time the page becomes visible. Override to refresh data."""
-        pass

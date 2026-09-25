@@ -1,5 +1,6 @@
 import httpx
 import structlog
+
 from app.config import settings
 
 logger = structlog.get_logger("llm.ollama")

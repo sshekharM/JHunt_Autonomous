@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.tenant_models.application import ApplicationStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -56,7 +55,7 @@ def _mock_tenant_db(prefs):
 
 @pytest.mark.asyncio
 async def test_pause_sets_paused_flag():
-    from app.routers.applications import pause_auto_apply, PauseRequest
+    from app.routers.applications import PauseRequest, pause_auto_apply
 
     prefs = _make_prefs()
     gen, db = _mock_tenant_db(prefs)
@@ -97,7 +96,7 @@ async def test_delete_pause_clears_flags():
 
 @pytest.mark.asyncio
 async def test_add_company_blacklist():
-    from app.routers.applications import add_company_blacklist, CompanyBlacklistRequest
+    from app.routers.applications import CompanyBlacklistRequest, add_company_blacklist
 
     prefs = _make_prefs(company_blacklist=[])
     gen, db = _mock_tenant_db(prefs)
@@ -134,7 +133,7 @@ async def test_remove_company_blacklist():
 
 @pytest.mark.asyncio
 async def test_add_title_blacklist():
-    from app.routers.applications import add_title_blacklist, TitleBlacklistRequest
+    from app.routers.applications import TitleBlacklistRequest, add_title_blacklist
 
     prefs = _make_prefs(title_blacklist=[])
     gen, db = _mock_tenant_db(prefs)

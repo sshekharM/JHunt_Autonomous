@@ -1,13 +1,15 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from jose import jwt, JWTError
-from passlib.context import CryptContext
+
 from authlib.integrations.starlette_client import OAuth
 from fastapi import HTTPException, status
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
 from app.config import settings
-from app.security.encryption import sha256_hash, generate_thumbprint, schema_name_from_thumbprint
-from app.security.totp import generate_totp_secret
-from app.security.audit_log import audit
+from app.security.encryption import (
+    generate_thumbprint,
+    schema_name_from_thumbprint,
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -58,7 +60,7 @@ if settings.microsoft_client_id:
     )
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     payload = data.copy()
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(hours=settings.jwt_expiry_hours)
@@ -99,7 +101,7 @@ def create_pending_2fa_token(user_id: str) -> str:
     )
 
 
-def decode_pending_2fa_token(token: Optional[str]) -> str:
+def decode_pending_2fa_token(token: str | None) -> str:
     """Return the user id of a valid pending-2FA token, else raise 401."""
     if not token:
         raise _unauthorized("No pending 2FA session.")
