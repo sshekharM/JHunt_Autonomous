@@ -42,6 +42,107 @@ def _reset_module_state():
     discord_bot._loop = None
 
 
+def test_start_discord_bot_starts_a_daemon_thread_when_token_configured(monkeypatch):
+    started = MagicMock()
+    received_kwargs = {}
+
+    def fake_thread(**kwargs):
+        received_kwargs.update(kwargs)
+        return started
+
+    monkeypatch.setattr(discord_bot.settings, "discord_bot_token", "a-token")
+    monkeypatch.setattr(discord_bot.threading, "Thread", fake_thread)
+
+    discord_bot.start_discord_bot()
+
+    started.start.assert_called_once()
+    assert received_kwargs["daemon"] is True
+
+
+def test_start_discord_bot_does_nothing_without_a_token(monkeypatch):
+    thread_class = MagicMock()
+    monkeypatch.setattr(discord_bot.settings, "discord_bot_token", "")
+    monkeypatch.setattr(discord_bot.threading, "Thread", thread_class)
+
+    discord_bot.start_discord_bot()
+
+    thread_class.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "client, loop",
+    [(None, None), (MagicMock(), None), (None, MagicMock())],
+    ids=["both_unset", "only_client_set", "only_loop_set"],
+)
+def test_send_to_channel_returns_false_when_bot_not_fully_started(client, loop):
+    """Pins `_client is None or _loop is None`: both must be set, not just
+    one -- an `and` here would wrongly proceed with only one populated."""
+    discord_bot._client = client
+    discord_bot._loop = loop
+
+    ok = asyncio.run(discord_bot.send_to_channel("123", "hello"))
+
+    assert ok is False
+
+
+def test_send_to_channel_never_touches_the_client_when_loop_is_unset():
+    """Stronger pin for the `or`: with _loop unset, _client.get_channel must
+    never be reached -- an `and` mutation would call it and the return value
+    alone (also False, via a downstream failure) would not catch that."""
+    client = MagicMock()
+    discord_bot._client = client
+    discord_bot._loop = None
+
+    asyncio.run(discord_bot.send_to_channel("123", "hello"))
+
+    client.get_channel.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "client, loop",
+    [(None, None), (MagicMock(), None), (None, MagicMock())],
+    ids=["both_unset", "only_client_set", "only_loop_set"],
+)
+def test_provision_user_channel_returns_none_when_bot_not_fully_started(client, loop):
+    discord_bot._client = client
+    discord_bot._loop = loop
+
+    channel_id = asyncio.run(discord_bot.provision_user_channel("Jane Doe"))
+
+    assert channel_id is None
+
+
+def test_provision_user_channel_never_touches_the_client_when_loop_is_unset(monkeypatch):
+    client = MagicMock()
+    discord_bot._client = client
+    discord_bot._loop = None
+    monkeypatch.setattr(discord_bot.settings, "discord_guild_id", "1")
+
+    asyncio.run(discord_bot.provision_user_channel("Jane Doe"))
+
+    client.get_guild.assert_not_called()
+
+
+def test_send_to_channel_returns_false_when_send_raises(monkeypatch):
+    text_channel = MagicMock(spec=discord.TextChannel)
+
+    async def raising_send(text):
+        raise RuntimeError("discord api down")
+
+    text_channel.send = raising_send
+    client = MagicMock()
+    client.get_channel.return_value = text_channel
+    discord_bot._client = client
+    discord_bot._loop = MagicMock()
+    monkeypatch.setattr(discord_bot.asyncio, "run_coroutine_threadsafe", _fake_run_coroutine_threadsafe)
+
+    ok = asyncio.run(discord_bot.send_to_channel("123", "hello"))
+
+    assert ok is False
+
+
+
+
 def test_send_to_channel_sends_when_channel_is_messageable(monkeypatch):
     text_channel = MagicMock(spec=discord.TextChannel)
 
