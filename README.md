@@ -1,5 +1,7 @@
 # jhunt-autonomous — Claude Harness Dashboard
 
+> **Installing or deploying jH_ANS?** See the step-by-step guide in [docs/INSTALL.md](docs/INSTALL.md) and the production runbook in [docs/deploy-verification.md](docs/deploy-verification.md).
+
 This project was scaffolded with **Claude Harness Engine v5**.
 
 | | |
